@@ -22,33 +22,48 @@ export function TwitterActionVerifier({
   actionType,
   commentText
 }: TwitterActionVerifierProps) {
-  const [step, setStep] = useState<'ready' | 'completing' | 'completed' | 'verified'>('ready');
-  const [progress, setProgress] = useState(0);
+  const [step, setStep] = useState<'ready' | 'action' | 'verify' | 'verified'>('ready');
   const [showConfetti, setShowConfetti] = useState(false);
-  const progressRef = useRef<NodeJS.Timeout | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  const startCompletion = () => {
-    setStep('completing');
-    setProgress(0);
+  const extractTweetId = (url: string): string => {
+    const match = url.match(/status\/(\d+)/);
+    return match ? match[1] : '';
+  };
 
-    // Simulate automatic completion with progress
-    progressRef.current = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          if (progressRef.current) {
-            clearInterval(progressRef.current);
-          }
-          setStep('completed');
-          return 100;
-        }
-        return prev + 2;
-      });
-    }, 50);
+  const getActionUrl = () => {
+    const tweetId = extractTweetId(tweetUrl);
+    
+    switch (actionType) {
+      case 'like':
+        return `https://twitter.com/intent/like?tweet_id=${tweetId}`;
+      case 'retweet':
+        return `https://twitter.com/intent/retweet?tweet_id=${tweetId}`;
+      case 'comment':
+        const encodedComment = encodeURIComponent(commentText || '');
+        return `https://twitter.com/intent/tweet?in_reply_to=${tweetId}&text=${encodedComment}`;
+      default:
+        return tweetUrl;
+    }
+  };
+
+  const openTwitterAction = () => {
+    setStep('action');
+  };
+
+  const handleActionCompleted = () => {
+    setStep('verify');
   };
 
   const handleVerify = async () => {
+    setIsVerifying(true);
+    
+    // Simulate verification process
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
     setStep('verified');
     setShowConfetti(true);
+    setIsVerifying(false);
 
     // Call the verification callback after showing confetti
     setTimeout(() => {
@@ -57,20 +72,15 @@ export function TwitterActionVerifier({
   };
 
   const handleClose = () => {
-    if (progressRef.current) {
-      clearInterval(progressRef.current);
-    }
     setStep('ready');
-    setProgress(0);
     setShowConfetti(false);
+    setIsVerifying(false);
     onClose();
   };
 
   useEffect(() => {
     return () => {
-      if (progressRef.current) {
-        clearInterval(progressRef.current);
-      }
+      // Cleanup if needed
     };
   }, []);
 
@@ -84,6 +94,12 @@ export function TwitterActionVerifier({
     like: '❤️',
     retweet: '🔄',
     comment: '💬'
+  };
+
+  const actionButtons = {
+    like: 'Like Tweet',
+    retweet: 'Retweet',
+    comment: 'Reply'
   };
 
   // Confetti component
@@ -108,7 +124,7 @@ export function TwitterActionVerifier({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800">
+      <DialogContent className={`${step === 'action' ? 'sm:max-w-4xl' : 'sm:max-w-md'} bg-slate-900 border-slate-800`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white">
             <Twitter className="h-5 w-5 text-blue-500" />
@@ -135,73 +151,100 @@ export function TwitterActionVerifier({
               <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
                 <p className="text-sm text-blue-300">
                   <Sparkles className="h-4 w-4 inline mr-2" />
-                  Click below to automatically complete this action and earn your reward!
+                  Click below to open Twitter and complete the action manually
                 </p>
               </div>
 
-              <Button onClick={startCompletion} className="w-full bg-blue-600 hover:bg-blue-700 py-3">
+              <Button onClick={openTwitterAction} className="w-full bg-blue-600 hover:bg-blue-700 py-3">
                 <Twitter className="h-5 w-5 mr-2" />
-                Complete {actionType} & Earn USDC
+                Open Twitter & {actionButtons[actionType]}
               </Button>
             </div>
           )}
 
-          {step === 'completing' && (
-            <div className="text-center space-y-6">
-              <div className="relative">
-                <div className="animate-spin">
-                  <Twitter className="h-16 w-16 mx-auto text-blue-500" />
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-20 border-4 border-blue-500/20 rounded-full animate-ping"></div>
-                </div>
+          {step === 'action' && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <p className="text-white font-medium">Complete the {actionType} action below:</p>
+                <p className="text-sm text-slate-400">Click the {actionButtons[actionType]} button on Twitter</p>
+              </div>
+              
+              <div className="bg-slate-800 rounded-lg p-2 border border-slate-700">
+                <iframe
+                  src={getActionUrl()}
+                  className="w-full h-96 rounded border-0"
+                  title="Twitter Action"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                />
               </div>
 
-              <div>
-                <p className="font-medium text-white text-lg">Completing {actionType}...</p>
-                <p className="text-sm text-slate-400 mt-2">
-                  Processing your Twitter action automatically
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="w-full bg-slate-800 rounded-full h-3">
-                  <div
-                    className="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full transition-all duration-100"
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-slate-400">{progress}% complete</p>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={() => setStep('ready')} 
+                  variant="outline"
+                  className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={handleActionCompleted}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  I completed the action
+                </Button>
               </div>
             </div>
           )}
 
-          {step === 'completed' && (
+          {step === 'verify' && (
             <div className="text-center space-y-4">
               <div className="relative">
-                <CheckCircle className="h-20 w-20 mx-auto text-green-500" />
+                <CheckCircle className="h-16 w-16 mx-auto text-green-500" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-24 h-24 border-4 border-green-500/30 rounded-full animate-ping"></div>
+                  <div className="w-20 h-20 border-4 border-green-500/30 rounded-full animate-ping"></div>
                 </div>
               </div>
 
               <div>
-                <p className="font-bold text-green-400 text-xl">Action Completed!</p>
+                <p className="font-medium text-white text-lg">Ready to verify completion</p>
                 <p className="text-sm text-slate-400 mt-2">
-                  Your {actionType} has been successfully processed
+                  Did you successfully complete the {actionType} action?
                 </p>
               </div>
 
               <div className="p-4 bg-green-900/20 border border-green-700 rounded-lg">
                 <p className="text-sm text-green-300">
-                  ✅ Ready to verify and claim your USDC reward
+                  ✅ Click verify to claim your USDC reward
                 </p>
               </div>
 
-              <Button onClick={handleVerify} className="w-full bg-green-600 hover:bg-green-700 py-3">
-                <CheckCircle className="h-5 w-5 mr-2" />
-                Verify & Claim Reward
-              </Button>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={() => setStep('action')} 
+                  variant="outline"
+                  className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  No, try again
+                </Button>
+                <Button 
+                  onClick={handleVerify}
+                  disabled={isVerifying}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  {isVerifying ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Verifying...
+                    </div>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Yes, verify & earn
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
