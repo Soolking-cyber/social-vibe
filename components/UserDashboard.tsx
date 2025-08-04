@@ -280,76 +280,78 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
               </div>
               <div className="text-sm text-slate-400 mb-2">Earned Balance</div>
               {stats?.canWithdraw ? (
-                <Button
-                  onClick={async () => {
-                    setWithdrawing(true);
-                    try {
-                      const response = await fetch('/api/contract/withdraw-earnings', {
-                        method: 'POST'
-                      });
-                      const data = await response.json();
-                      if (data.success) {
-                        alert(`Success! Withdrew ${data.withdrawnAmount} USDC to your wallet.`);
-                        await fetchUserStats();
-                        await fetchWalletValue();
-                      } else {
-                        if (data.error && data.error.includes('Insufficient ETH balance')) {
-                          alert(`${data.error}\n\nTo fix this:\n1. Click "Check ETH Balance" to see your current ETH\n2. Click "Get Sepolia ETH" to get test ETH\n3. Wait a few minutes for the ETH to arrive\n4. Try withdrawing again`);
+                <div className="space-y-2">
+                  <Button
+                    onClick={async () => {
+                      setWithdrawing(true);
+                      try {
+                        const response = await fetch('/api/contract/withdraw-earnings', {
+                          method: 'POST'
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                          alert(`Success! Withdrew ${data.withdrawnAmount} USDC to your wallet.`);
+                          await fetchUserStats();
                           await fetchWalletValue();
                         } else {
-                          alert(`Error: ${data.error}`);
+                          if (data.error && data.error.includes('Insufficient ETH balance')) {
+                            alert(`${data.error}\n\nTo fix this:\n1. Click "Check ETH Balance" to see your current ETH\n2. Click "Get Sepolia ETH" to get test ETH\n3. Wait a few minutes for the ETH to arrive\n4. Try withdrawing again`);
+                            await fetchWalletValue();
+                          } else {
+                            alert(`Error: ${data.error}`);
+                          }
                         }
+                      } catch (error) {
+                        alert('Failed to withdraw earnings');
+                      } finally {
+                        setWithdrawing(false);
                       }
-                    } catch (error) {
-                      alert('Failed to withdraw earnings');
-                    } finally {
-                      setWithdrawing(false);
-                    }
-                  }}
-                  disabled={withdrawing}
-                  size="sm"
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed mb-2"
-                >
-                  {withdrawing ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Processing...
-                    </div>
-                  ) : (
-                    'Withdraw Earnings'
-                  )}
-                </Button>
-                <Button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('/api/debug/eth-balance');
-                      const data = await response.json();
-                      if (data.success) {
-                        const debug = data.debug;
-                        const message = `ETH Balance Debug:\n\n` +
-                          `Wallet: ${debug.walletAddress}\n` +
-                          `Cached ETH: ${debug.cachedBalances.eth} ETH\n` +
-                          `Fresh ETH: ${debug.freshBalances?.eth || 'Failed to fetch'} ETH\n` +
-                          `Earned: $${debug.earnedBalance.toFixed(2)} USDC\n` +
-                          `Min ETH needed: ${debug.minEthRequired} ETH\n\n` +
-                          `Status:\n` +
-                          `- Can withdraw: ${debug.recommendations.readyToWithdraw ? 'Yes' : 'No'}\n` +
-                          `- Needs more ETH: ${debug.recommendations.needsEth ? 'Yes' : 'No'}\n` +
-                          `- Needs more earnings: ${debug.recommendations.needsMoreEarnings ? 'Yes' : 'No'}`;
-                        alert(message);
-                      } else {
-                        alert(`Debug failed: ${data.error}`);
+                    }}
+                    disabled={withdrawing}
+                    size="sm"
+                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {withdrawing ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Processing...
+                      </div>
+                    ) : (
+                      'Withdraw Earnings'
+                    )}
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/debug/eth-balance');
+                        const data = await response.json();
+                        if (data.success) {
+                          const debug = data.debug;
+                          const message = `ETH Balance Debug:\n\n` +
+                            `Wallet: ${debug.walletAddress}\n` +
+                            `Cached ETH: ${debug.cachedBalances.eth} ETH\n` +
+                            `Fresh ETH: ${debug.freshBalances?.eth || 'Failed to fetch'} ETH\n` +
+                            `Earned: $${debug.earnedBalance.toFixed(2)} USDC\n` +
+                            `Min ETH needed: ${debug.minEthRequired} ETH\n\n` +
+                            `Status:\n` +
+                            `- Can withdraw: ${debug.recommendations.readyToWithdraw ? 'Yes' : 'No'}\n` +
+                            `- Needs more ETH: ${debug.recommendations.needsEth ? 'Yes' : 'No'}\n` +
+                            `- Needs more earnings: ${debug.recommendations.needsMoreEarnings ? 'Yes' : 'No'}`;
+                          alert(message);
+                        } else {
+                          alert(`Debug failed: ${data.error}`);
+                        }
+                      } catch (error) {
+                        alert('Failed to debug ETH balance');
                       }
-                    } catch (error) {
-                      alert('Failed to debug ETH balance');
-                    }
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
-                >
-                  Debug ETH Balance
-                </Button>
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
+                  >
+                    Debug ETH Balance
+                  </Button>
+                </div>
               ) : (
                 <div className="text-xs text-slate-500">
                   Need ${stats?.withdrawalThreshold || 10} to withdraw
