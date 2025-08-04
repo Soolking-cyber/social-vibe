@@ -131,14 +131,27 @@ export async function POST(request: NextRequest) {
         console.log(`Using Twitter username: ${cleanUsername}`);
 
         // Get user's Twitter ID from their username
-        const userTwitterId = await twitterVerificationService.getUserIdByUsername(cleanUsername);
-        console.log(`Twitter ID result: ${userTwitterId}`);
+        let userTwitterId: string | null = null;
+        try {
+          userTwitterId = await twitterVerificationService.getUserIdByUsername(cleanUsername);
+          console.log(`Twitter ID lookup result: ${userTwitterId}`);
+        } catch (twitterError) {
+          console.error(`❌ Twitter username lookup failed:`, twitterError);
+          
+          const errorMessage = twitterError instanceof Error ? twitterError.message : 'Unknown Twitter API error';
+          
+          return NextResponse.json({
+            error: `Twitter verification failed: ${errorMessage}\n\nPossible solutions:\n• Check that your Twitter username "${cleanUsername}" is correct\n• Ensure your Twitter account is public and active\n• Try again in a few minutes (API rate limits)\n• Contact support if the issue persists`
+          }, { status: 400 });
+        }
 
         if (!userTwitterId) {
           return NextResponse.json({
             error: `Could not find Twitter account for username "${cleanUsername}". This could mean:\n\n• The username is incorrect or misspelled\n• The account is private or suspended\n• The account doesn't exist\n\nPlease:\n1. Check your Twitter username in your profile\n2. Use the "Test Twitter Username" tool in the dashboard\n3. Update your Twitter handle if needed`
           }, { status: 400 });
         }
+
+        console.log(`✅ Twitter ID found: ${userTwitterId}`);
 
         // Verify the action was completed
         console.log(`🔍 Starting verification process...`);
