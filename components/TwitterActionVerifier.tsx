@@ -133,7 +133,8 @@ export function TwitterActionVerifier({
       
       popup.addEventListener('beforeunload', cleanupListener);
     } else {
-      alert('Please allow popups to complete this action');
+      // Handle popup blocked - show elegant error in the dialog
+      setStep('instructions');
     }
   };
 
@@ -160,7 +161,8 @@ export function TwitterActionVerifier({
     } catch (error) {
       console.error('Verification error:', error);
       setIsVerifying(false);
-      alert('Verification failed. Please try again.');
+      // Reset to verify step to allow retry
+      setStep('verify');
     }
   };
 
@@ -198,9 +200,9 @@ export function TwitterActionVerifier({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 text-white">
             <Twitter className="h-5 w-5 text-blue-500" />
             Complete Twitter Action
           </DialogTitle>
@@ -210,39 +212,39 @@ export function TwitterActionVerifier({
           {step === 'instructions' && (
             <>
               <div className="text-center space-y-4">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-800 font-medium mb-2">
+                <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+                  <p className="text-sm text-slate-200 font-medium mb-2">
                     Action Required: {actionInstructions[actionType]}
                   </p>
                   {commentText && (
-                    <div className="mt-3 p-3 bg-blue-100 rounded border">
-                      <p className="text-xs text-blue-600 mb-1">Comment to post:</p>
-                      <p className="text-sm font-mono text-blue-800">"{commentText}"</p>
+                    <div className="mt-3 p-3 bg-slate-700/50 rounded border border-slate-600">
+                      <p className="text-xs text-slate-400 mb-1">Comment to post:</p>
+                      <p className="text-sm font-mono text-slate-200">"{commentText}"</p>
                     </div>
                   )}
                 </div>
                 
-                <div className="text-sm text-gray-600 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                <div className="text-sm text-slate-400 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
                     <span>Click "Open Twitter" to open the tweet in a popup window</span>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                  <div className="flex items-start gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
                     <span>Complete the required {actionType} action on Twitter</span>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                  <div className="flex items-start gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
                     <span>Close the popup or wait for automatic detection</span>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">4</span>
+                  <div className="flex items-start gap-3">
+                    <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
                     <span>Confirm completion to earn your reward</span>
                   </div>
                 </div>
               </div>
 
-              <Button onClick={openTwitterPopup} className="w-full bg-blue-500 hover:bg-blue-600">
+              <Button onClick={openTwitterPopup} className="w-full bg-blue-600 hover:bg-blue-700">
                 <Twitter className="h-4 w-4 mr-2" />
                 Open Twitter
               </Button>
@@ -262,19 +264,19 @@ export function TwitterActionVerifier({
                 )}
               </div>
               <div>
-                <p className="font-medium">Twitter popup is open</p>
-                <p className="text-sm text-gray-600 mb-2">
+                <p className="font-medium text-white">Twitter popup is open</p>
+                <p className="text-sm text-slate-400 mb-2">
                   Complete the {actionType} action and the system will detect it
                 </p>
                 {actionCompleted && (
-                  <p className="text-sm text-green-600 font-medium">
+                  <p className="text-sm text-green-400 font-medium">
                     ✅ Action detected! You can now verify completion.
                   </p>
                 )}
               </div>
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  <AlertCircle className="h-4 w-4 inline mr-1" />
+              <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+                <p className="text-sm text-slate-300">
+                  <AlertCircle className="h-4 w-4 inline mr-2 text-blue-400" />
                   Keep this dialog open while completing the action
                 </p>
               </div>
@@ -298,12 +300,12 @@ export function TwitterActionVerifier({
                 )}
               </div>
               <div>
-                <p className="font-medium">Ready to verify completion</p>
-                <p className="text-sm text-gray-600">
+                <p className="font-medium text-white">Ready to verify completion</p>
+                <p className="text-sm text-slate-400">
                   Did you successfully complete the {actionType} action?
                 </p>
                 {actionCompleted && (
-                  <p className="text-sm text-green-600 mt-2">
+                  <p className="text-sm text-green-400 mt-2">
                     ✅ Our system detected activity - looking good!
                   </p>
                 )}
@@ -312,7 +314,7 @@ export function TwitterActionVerifier({
                 <Button 
                   variant="outline" 
                   onClick={() => setStep('instructions')}
-                  className="flex-1"
+                  className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
                 >
                   No, try again
                 </Button>
@@ -344,17 +346,17 @@ export function TwitterActionVerifier({
                   <CheckCircle className="h-20 w-20 mx-auto text-green-500" />
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-16 h-16 border-4 border-green-200 rounded-full animate-ping"></div>
+                  <div className="w-16 h-16 border-4 border-green-500/30 rounded-full animate-ping"></div>
                 </div>
               </div>
               <div>
-                <p className="font-bold text-green-700 text-lg">Action Verified!</p>
-                <p className="text-sm text-gray-600">
+                <p className="font-bold text-green-400 text-lg">Action Verified!</p>
+                <p className="text-sm text-slate-400">
                   Your reward is being processed...
                 </p>
               </div>
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm text-green-800">
+              <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+                <p className="text-sm text-slate-300">
                   🎉 Congratulations! Your USDC reward will be added to your balance shortly.
                 </p>
               </div>
