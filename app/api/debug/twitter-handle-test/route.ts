@@ -50,8 +50,8 @@ export async function GET(request: NextRequest) {
       verification: {
         hasStoredHandle: !!user.twitter_handle,
         canGenerateId: false,
-        generatedId: null,
-        error: null
+        generatedId: null as string | null,
+        error: null as string | null
       }
     };
 

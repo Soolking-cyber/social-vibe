@@ -148,6 +148,13 @@ export async function POST(request: NextRequest) {
 
         // Generate consistent user ID from stored handle (no API calls)
         const userTwitterId = await twitterVerificationService.getUserIdByUsername(twitterUsername);
+        
+        if (!userTwitterId) {
+          return NextResponse.json({
+            error: 'Failed to generate Twitter ID from handle. Please check your Twitter handle in your profile.'
+          }, { status: 400 });
+        }
+        
         console.log(`✅ Generated consistent Twitter ID: ${userTwitterId}`);
 
         // Verify the action was completed (using bypass mode)
