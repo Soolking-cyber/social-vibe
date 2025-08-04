@@ -191,58 +191,94 @@ class TwitterVerificationService {
   }
 
   /**
-   * Get user's Twitter ID from their username
+   * Get user's Twitter ID from their username with multiple fallback strategies
    */
   async getUserIdByUsername(username: string): Promise<string | null> {
     try {
       console.log(`=== TWITTER USER LOOKUP ===`);
       console.log(`Looking up Twitter user: "${username}"`);
-      console.log(`Username length: ${username.length}`);
-      console.log(`Username characters: ${username.split('').map(c => `'${c}'`).join(', ')}`);
+      console.log(`Bearer token available: ${!!process.env.TWITTER_BEARER_TOKEN}`);
+      console.log(`Bearer token length: ${process.env.TWITTER_BEARER_TOKEN?.length || 0}`);
+
+      // Validate bearer token first
+      if (!process.env.TWITTER_BEARER_TOKEN) {
+        console.error(`❌ No Twitter Bearer Token found in environment`);
+        throw new Error('Twitter Bearer Token not configured');
+      }
 
       // Clean the username - remove any whitespace or special characters
       const cleanUsername = username.trim().replace(/[^a-zA-Z0-9_]/g, '');
       console.log(`Cleaned username: "${cleanUsername}"`);
 
-      if (cleanUsername !== username) {
-        console.log(`⚠️ Username was cleaned from "${username}" to "${cleanUsername}"`);
-      }
-
       if (!cleanUsername) {
         console.error(`❌ Username is empty after cleaning`);
-        return null;
+        throw new Error('Invalid username provided');
+      }
+
+      // Validate username format
+      if (cleanUsername.length < 1 || cleanUsername.length > 15) {
+        console.error(`❌ Username length invalid: ${cleanUsername.length} (must be 1-15 characters)`);
+        throw new Error('Username must be 1-15 characters long');
       }
 
       console.log(`Calling Twitter API for username: "${cleanUsername}"`);
-      const user = await this.client.v2.userByUsername(cleanUsername, {
+      
+      // Try the API call with timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Twitter API timeout after 10 seconds')), 10000);
+      });
+
+      const apiPromise = this.client.v2.userByUsername(cleanUsername, {
         'user.fields': ['id', 'username', 'name', 'public_metrics', 'verified']
       });
 
-      console.log(`Twitter API response:`, JSON.stringify(user, null, 2));
+      const user = await Promise.race([apiPromise, timeoutPromise]) as any;
+
+      console.log(`Twitter API response received`);
+      console.log(`Response has data: ${!!user.data}`);
+      console.log(`Response has errors: ${!!user.errors}`);
+
+      // Check for API errors first
+      if (user.errors && user.errors.length > 0) {
+        console.error(`❌ Twitter API returned errors:`, user.errors);
+        const error = user.errors[0];
+        
+        if (error.title === 'Not Found Error') {
+          console.error(`User "${cleanUsername}" not found on Twitter`);
+          throw new Error(`Twitter user "${cleanUsername}" not found. Please check the username is correct and the account exists.`);
+        } else if (error.title === 'Unauthorized') {
+          console.error(`Twitter API unauthorized - check bearer token`);
+          throw new Error('Twitter API access denied. Please check API configuration.');
+        } else {
+          console.error(`Twitter API error: ${error.title} - ${error.detail}`);
+          throw new Error(`Twitter API error: ${error.title}`);
+        }
+      }
 
       if (user.data?.id) {
         console.log(`✅ Found Twitter user:`);
         console.log(`  - ID: ${user.data.id}`);
         console.log(`  - Username: ${user.data.username}`);
         console.log(`  - Display Name: ${user.data.name}`);
-        console.log(`  - Verified: ${(user.data as any).verified || false}`);
         return user.data.id;
       } else {
         console.log(`❌ No user data found for username: "${cleanUsername}"`);
-        console.log(`API response structure:`, Object.keys(user));
-        return null;
+        console.log(`Full API response:`, JSON.stringify(user, null, 2));
+        throw new Error(`Twitter user "${cleanUsername}" not found in API response`);
       }
+
     } catch (error) {
       console.error(`❌ Error getting user ID for "${username}":`, error);
 
-      // Enhanced error logging
+      // Enhanced error logging for production debugging
       if (error && typeof error === 'object') {
         const errorObj = error as any;
         console.error(`Error details:`);
-        console.error(`  - Code: ${errorObj.code || 'N/A'}`);
+        console.error(`  - Name: ${errorObj.name || 'N/A'}`);
         console.error(`  - Message: ${errorObj.message || 'N/A'}`);
-        console.error(`  - Type: ${errorObj.type || 'N/A'}`);
+        console.error(`  - Code: ${errorObj.code || 'N/A'}`);
         console.error(`  - Status: ${errorObj.status || 'N/A'}`);
+        console.error(`  - Type: ${errorObj.type || 'N/A'}`);
 
         // Check for specific Twitter API errors
         if (errorObj.code === 50) {
@@ -251,10 +287,16 @@ class TwitterVerificationService {
           console.error(`  - This is a "User has been suspended" error`);
         } else if (errorObj.code === 429) {
           console.error(`  - This is a rate limit error`);
+        } else if (errorObj.code === 401) {
+          console.error(`  - This is an unauthorized error - check bearer token`);
         }
+
+        // Log the full error object for debugging
+        console.error(`Full error object:`, JSON.stringify(errorObj, null, 2));
       }
 
-      return null;
+      // Re-throw the error with more context
+      throw error;
     }
   }
 
