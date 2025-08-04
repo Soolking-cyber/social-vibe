@@ -13,7 +13,7 @@ interface Job {
     id: number;
     creator: string;
     tweetUrl: string;
-    actionType: 'like' | 'repost' | 'comment';
+    actionType: 'like' | 'retweet' | 'comment';
     pricePerAction: string; // Contract returns string
     maxActions: number;
     completedActions: number;
@@ -36,6 +36,12 @@ export default function Marketplace() {
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
     const [popupJob, setPopupJob] = useState<Job | null>(null);
     const [showPopup, setShowPopup] = useState(false);
+
+    // Helper function to normalize action types
+    const normalizeActionType = (actionType: string): 'like' | 'retweet' | 'comment' => {
+        if (actionType === 'repost') return 'retweet';
+        return actionType as 'like' | 'retweet' | 'comment';
+    };
 
     useEffect(() => {
         fetchJobs();
@@ -71,6 +77,7 @@ export default function Marketplace() {
                     })
                     .map(job => ({
                         ...job,
+                        actionType: normalizeActionType(job.actionType), // Normalize action type
                         isOwnJob: job.creator.toLowerCase() === userWalletAddress,
                         hasUserCompleted: false, // Will be checked individually
                         canComplete: job.isActive && job.remainingActions > 0
@@ -121,7 +128,12 @@ export default function Marketplace() {
             }
 
             const job = await jobResponse.json();
-            setPopupJob(job);
+            // Normalize action type for the popup
+            const normalizedJob = {
+                ...job,
+                actionType: normalizeActionType(job.actionType)
+            };
+            setPopupJob(normalizedJob);
             setShowPopup(true);
 
         } catch (error) {
@@ -305,8 +317,8 @@ export default function Marketplace() {
                         const jobStatus = getJobStatus(job);
                         return (
                             <Card key={job.id} className={`bg-slate-900 border-slate-800 ${jobStatus === 'incomplete' ? 'ring-2 ring-blue-500/20' :
-                                    jobStatus === 'created' ? 'ring-2 ring-purple-500/20' :
-                                        jobStatus === 'completed' ? 'ring-2 ring-green-500/20' : ''
+                                jobStatus === 'created' ? 'ring-2 ring-purple-500/20' :
+                                    jobStatus === 'completed' ? 'ring-2 ring-green-500/20' : ''
                                 }`}>
                                 <CardHeader>
                                     <div className="flex justify-between items-start">

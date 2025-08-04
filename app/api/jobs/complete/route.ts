@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     console.log(`=== JOB COMPLETION REQUEST START ===`);
     console.log(`Request method: ${request.method}`);
     console.log(`Request URL: ${request.url}`);
-    
+
     const session = await getServerSession(authOptions);
     console.log(`Session check result:`, {
       hasSession: !!session,
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       console.log(`❌ RETURNING 400: Failed to parse request body:`, parseError);
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    
+
     const { jobId } = body;
     console.log(`Job ID extraction:`, { jobId, type: typeof jobId, hasJobId: !!jobId });
 
@@ -64,17 +64,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    console.log(`✅ User found:`, { 
-      id: user.id, 
-      name: user.name, 
+    console.log(`✅ User found:`, {
+      id: user.id,
+      name: user.name,
       twitter_handle: user.twitter_handle,
-      wallet_address: user.wallet_address 
+      wallet_address: user.wallet_address
     });
 
     // Get job details from contract
     const jobIdNumber = parseInt(jobId);
     console.log(`🔍 Looking up job ${jobIdNumber} from contract...`);
-    
+
     const job = await jobValidator.getJobFromContract(jobIdNumber);
     if (!job) {
       console.log(`❌ Job ${jobIdNumber} not found in contract`);
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     console.log(`🔍 Checking if user can complete job...`);
     const validation = await jobValidator.canUserCompleteJob(jobIdNumber, user.wallet_address);
     console.log(`Validation result:`, validation);
-    
+
     if (!validation.canComplete) {
       console.log(`❌ User cannot complete job: ${validation.reason}`);
       return NextResponse.json({ error: validation.reason }, { status: 400 });
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     // Check if user has already completed this job in our database
     console.log(`🔍 Checking for existing completion...`);
     console.log(`Looking for: job_id=${jobIdNumber}, user_id=${user.id}`);
-    
+
     const { data: existingCompletion, error: checkError } = await supabase
       .from('job_completions')
       .select('id, completed_at, reward_amount')
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     if (existingCompletion) {
       console.log(`❌ User has already completed this job at ${existingCompletion.completed_at}`);
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: 'You have already completed this job',
         completedAt: existingCompletion.completed_at,
         previousReward: existingCompletion.reward_amount
@@ -132,12 +132,12 @@ export async function POST(request: NextRequest) {
 
     // Always use bypass mode in production to avoid Twitter API rate limits
     console.log('🚀 PRODUCTION MODE: Using Twitter verification bypass to avoid rate limits');
-    
+
     {
       try {
         // Use securely stored Twitter handle from database
         const twitterUsername = user.twitter_handle;
-        
+
         if (!twitterUsername) {
           return NextResponse.json({
             error: 'No Twitter handle found in your profile. Please ensure your Twitter account is properly linked during login.'
@@ -148,13 +148,13 @@ export async function POST(request: NextRequest) {
 
         // Generate consistent user ID from stored handle (no API calls)
         const userTwitterId = await twitterVerificationService.getUserIdByUsername(twitterUsername);
-        
+
         if (!userTwitterId) {
           return NextResponse.json({
             error: 'Failed to generate Twitter ID from handle. Please check your Twitter handle in your profile.'
           }, { status: 400 });
         }
-        
+
         console.log(`✅ Generated consistent Twitter ID: ${userTwitterId}`);
 
         // Verify the action was completed (using bypass mode)
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
         console.log(`Tweet URL: ${job.tweetUrl}`);
         console.log(`Action Type: ${job.actionType}`);
         console.log(`User Twitter ID: ${userTwitterId}`);
-        
+
         try {
           const isVerified = await twitterVerificationService.verifyJobCompletion(
             job.tweetUrl,
@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
     // Record job completion - this is critical to prevent duplicate completions
     console.log(`📝 Recording job completion...`);
     console.log(`Inserting: job_id=${jobIdNumber}, user_id=${user.id}, reward_amount=${rewardAmount}`);
-    
+
     const { data: completionRecord, error: completionError } = await supabase
       .from('job_completions')
       .insert({
@@ -209,12 +209,12 @@ export async function POST(request: NextRequest) {
 
     if (completionError) {
       console.error('Failed to record job completion:', completionError);
-      
+
       // Completion record is critical to prevent duplicate rewards
       console.log(`⚠️ Job completion record failed - this prevents duplicate completions`);
-        
-      return NextResponse.json({ 
-        error: 'Failed to record job completion. Please try again.' 
+
+      return NextResponse.json({
+        error: 'Failed to record job completion. Please try again.'
       }, { status: 500 });
     }
 
@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : 'No stack trace'
     });
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Failed to complete job',
       debug: process.env.NODE_ENV === 'development' ? {
         errorMessage: error instanceof Error ? error.message : 'Unknown error'
