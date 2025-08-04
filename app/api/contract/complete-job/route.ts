@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
       // Decrypt private key and create signer
       const privateKey = walletService.decrypt(user.wallet_private_key);
-      const wallet = walletService.createWalletFromPrivateKey(privateKey);
+      const wallet = await walletService.createWalletFromPrivateKey(privateKey);
       
       // Connect service with signer
       jobsFactoryService.connectSigner(wallet);

@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       const privateKey = walletService.decrypt(user.wallet_private_key);
 
       // Create wallet instance
-      const wallet = walletService.createWalletFromPrivateKey(privateKey);
+      const wallet = await walletService.createWalletFromPrivateKey(privateKey);
 
       // Initialize contract service
       const jobsFactoryService = createJobsFactoryService(process.env.JOBS_FACTORY_CONTRACT_ADDRESS!);
