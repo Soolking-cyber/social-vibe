@@ -71,6 +71,8 @@ export async function POST(_request: NextRequest) {
 
     // Get real-time ETH balance from blockchain (not cached)
     let realTimeEthBalance = ethBalance;
+    let balanceFetchError = null;
+    
     try {
       console.log(`Fetching real-time ETH balance for wallet: ${user.wallet_address}`);
       const freshBalances = await walletService.getBalances(user.wallet_address);
@@ -88,16 +90,36 @@ export async function POST(_request: NextRequest) {
 
     } catch (balanceError) {
       console.error('Error fetching real-time ETH balance:', balanceError);
+      balanceFetchError = balanceError;
       console.log(`Falling back to cached balance: ${ethBalance} ETH`);
       // Fall back to cached balance if blockchain fetch fails
     }
 
-    // Check ETH balance for gas fees using real-time balance
-    console.log(`Checking ETH balance: ${realTimeEthBalance} >= 0.0001 ?`);
-    if (realTimeEthBalance < 0.0001) { // Minimum ETH for gas
-      console.log(`❌ Insufficient ETH: ${realTimeEthBalance} < 0.0001`);
+    // Use a more lenient ETH requirement (0.00005 ETH instead of 0.0001)
+    const minEthRequired = 0.00005;
+    console.log(`Checking ETH balance: ${realTimeEthBalance} >= ${minEthRequired} ?`);
+    
+    if (realTimeEthBalance < minEthRequired) {
+      console.log(`❌ Insufficient ETH: ${realTimeEthBalance} < ${minEthRequired}`);
+      
+      // Provide more detailed error information
+      let errorMessage = `Insufficient ETH balance for gas fees. Current ETH balance: ${realTimeEthBalance.toFixed(6)} ETH (need at least ${minEthRequired} ETH).`;
+      
+      if (balanceFetchError) {
+        errorMessage += ` Note: There was an error fetching your latest balance from the blockchain, so this might not be accurate. Please try refreshing your wallet balance first.`;
+      }
+      
+      errorMessage += ` Please add ETH to your wallet address: ${user.wallet_address}`;
+      
       return NextResponse.json({
-        error: `Insufficient ETH balance for gas fees. Current ETH balance: ${realTimeEthBalance.toFixed(6)} ETH. Please add ETH to your wallet.`
+        error: errorMessage,
+        debug: {
+          cachedEthBalance: ethBalance,
+          realTimeEthBalance: realTimeEthBalance,
+          minRequired: minEthRequired,
+          balanceFetchError: balanceFetchError ? balanceFetchError.message : null,
+          walletAddress: user.wallet_address
+        }
       }, { status: 400 });
     }
     console.log(`✅ Sufficient ETH for gas: ${realTimeEthBalance} ETH`)

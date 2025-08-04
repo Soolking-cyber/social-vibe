@@ -308,7 +308,7 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                   }}
                   disabled={withdrawing}
                   size="sm"
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed mb-2"
                 >
                   {withdrawing ? (
                     <div className="flex items-center gap-2">
@@ -318,6 +318,37 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                   ) : (
                     'Withdraw Earnings'
                   )}
+                </Button>
+                <Button
+                  onClick={async () => {
+                    try {
+                      const response = await fetch('/api/debug/eth-balance');
+                      const data = await response.json();
+                      if (data.success) {
+                        const debug = data.debug;
+                        const message = `ETH Balance Debug:\n\n` +
+                          `Wallet: ${debug.walletAddress}\n` +
+                          `Cached ETH: ${debug.cachedBalances.eth} ETH\n` +
+                          `Fresh ETH: ${debug.freshBalances?.eth || 'Failed to fetch'} ETH\n` +
+                          `Earned: $${debug.earnedBalance.toFixed(2)} USDC\n` +
+                          `Min ETH needed: ${debug.minEthRequired} ETH\n\n` +
+                          `Status:\n` +
+                          `- Can withdraw: ${debug.recommendations.readyToWithdraw ? 'Yes' : 'No'}\n` +
+                          `- Needs more ETH: ${debug.recommendations.needsEth ? 'Yes' : 'No'}\n` +
+                          `- Needs more earnings: ${debug.recommendations.needsMoreEarnings ? 'Yes' : 'No'}`;
+                        alert(message);
+                      } else {
+                        alert(`Debug failed: ${data.error}`);
+                      }
+                    } catch (error) {
+                      alert('Failed to debug ETH balance');
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
+                >
+                  Debug ETH Balance
                 </Button>
               ) : (
                 <div className="text-xs text-slate-500">
