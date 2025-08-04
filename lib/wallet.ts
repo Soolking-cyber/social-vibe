@@ -56,7 +56,7 @@ export class WalletService {
     for (let i = 0; i < this.providers.length; i++) {
       const providerIndex = (this.currentProviderIndex + i) % this.providers.length;
       const provider = this.providers[providerIndex];
-      
+
       try {
         // Test the provider with a simple call
         await provider.getBlockNumber();
@@ -67,14 +67,14 @@ export class WalletService {
         continue;
       }
     }
-    
+
     throw new Error('All RPC providers are currently unavailable');
   }
 
   // Retry logic for RPC calls
   private async withRetry<T>(operation: (provider: ethers.JsonRpcProvider) => Promise<T>, maxRetries: number = 3): Promise<T> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const provider = await this.getWorkingProvider();
@@ -82,20 +82,20 @@ export class WalletService {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         console.error(`Attempt ${attempt + 1} failed:`, lastError.message);
-        
+
         // If it's a rate limit error, try next provider immediately
         if (lastError.message.includes('Too Many Requests') || lastError.message.includes('429')) {
           this.currentProviderIndex = (this.currentProviderIndex + 1) % this.providers.length;
           continue;
         }
-        
+
         // For other errors, wait before retrying
         if (attempt < maxRetries - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
         }
       }
     }
-    
+
     throw lastError || new Error('All retry attempts failed');
   }
 
@@ -174,7 +174,7 @@ export class WalletService {
     try {
       console.log('Fetching USDC balance for address:', address);
       console.log('Using USDC contract:', SEPOLIA_CONFIG.usdcAddress);
-      
+
       return await this.withRetry(async (provider) => {
         const usdcContract = new ethers.Contract(
           SEPOLIA_CONFIG.usdcAddress,
@@ -184,7 +184,7 @@ export class WalletService {
 
         const balance = await usdcContract.balanceOf(address);
         const decimals = await usdcContract.decimals();
-        
+
         console.log('USDC balance raw:', balance.toString());
         console.log('USDC decimals:', decimals);
 
@@ -225,7 +225,7 @@ export class WalletService {
     amount: string
   ): Promise<string> {
     try {
-      const wallet = this.createWalletFromPrivateKey(privateKey);
+      const wallet = await this.createWalletFromPrivateKey(privateKey);
       const tx = await wallet.sendTransaction({
         to: toAddress,
         value: ethers.parseEther(amount),
@@ -245,7 +245,7 @@ export class WalletService {
     amount: string
   ): Promise<string> {
     try {
-      const wallet = this.createWalletFromPrivateKey(privateKey);
+      const wallet = await this.createWalletFromPrivateKey(privateKey);
       const usdcContract = new ethers.Contract(
         SEPOLIA_CONFIG.usdcAddress,
         ERC20_ABI,
