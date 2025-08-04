@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Twitter, Sparkles } from 'lucide-react';
@@ -25,6 +25,7 @@ export function TwitterActionVerifier({
   const [step, setStep] = useState<'ready' | 'action' | 'verify' | 'verified'>('ready');
   const [showConfetti, setShowConfetti] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [popupWindow, setPopupWindow] = useState<Window | null>(null);
 
   const extractTweetId = (url: string): string => {
     const match = url.match(/status\/(\d+)/);
@@ -33,7 +34,7 @@ export function TwitterActionVerifier({
 
   const getActionUrl = () => {
     const tweetId = extractTweetId(tweetUrl);
-    
+
     switch (actionType) {
       case 'like':
         return `https://twitter.com/intent/like?tweet_id=${tweetId}`;
@@ -48,7 +49,32 @@ export function TwitterActionVerifier({
   };
 
   const openTwitterAction = () => {
-    setStep('action');
+    const url = getActionUrl();
+    
+    // Open Twitter in a small, centered popup window
+    const popup = window.open(
+      url,
+      'twitter-action',
+      'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' + 
+      (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
+    );
+    
+    if (popup) {
+      setPopupWindow(popup);
+      setStep('action');
+      
+      // Monitor popup for closure
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed);
+          setStep('verify');
+        }
+      }, 1000);
+    } else {
+      // Fallback if popup is blocked
+      window.open(url, '_blank');
+      setStep('action');
+    }
   };
 
   const handleActionCompleted = () => {
@@ -57,10 +83,10 @@ export function TwitterActionVerifier({
 
   const handleVerify = async () => {
     setIsVerifying(true);
-    
+
     // Simulate verification process
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
+
     setStep('verified');
     setShowConfetti(true);
     setIsVerifying(false);
@@ -72,9 +98,13 @@ export function TwitterActionVerifier({
   };
 
   const handleClose = () => {
+    if (popupWindow && !popupWindow.closed) {
+      popupWindow.close();
+    }
     setStep('ready');
     setShowConfetti(false);
     setIsVerifying(false);
+    setPopupWindow(null);
     onClose();
   };
 
@@ -124,7 +154,7 @@ export function TwitterActionVerifier({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className={`${step === 'action' ? 'sm:max-w-4xl' : 'sm:max-w-md'} bg-slate-900 border-slate-800`}>
+      <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white">
             <Twitter className="h-5 w-5 text-blue-500" />
@@ -163,30 +193,47 @@ export function TwitterActionVerifier({
           )}
 
           {step === 'action' && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <p className="text-white font-medium">Complete the {actionType} action below:</p>
-                <p className="text-sm text-slate-400">Click the {actionButtons[actionType]} button on Twitter</p>
+            <div className="text-center space-y-6">
+              <div className="relative">
+                <div className="animate-pulse">
+                  <Twitter className="h-20 w-20 mx-auto text-blue-500" />
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-24 h-24 border-4 border-blue-500/20 rounded-full animate-ping"></div>
+                </div>
               </div>
-              
-              <div className="bg-slate-800 rounded-lg p-2 border border-slate-700">
-                <iframe
-                  src={getActionUrl()}
-                  className="w-full h-96 rounded border-0"
-                  title="Twitter Action"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                />
+
+              <div>
+                <p className="font-medium text-white text-lg">Twitter popup opened!</p>
+                <p className="text-sm text-slate-400 mt-2">
+                  Complete the {actionType} action in the popup window
+                </p>
+              </div>
+
+              <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+                <p className="text-sm text-slate-300">
+                  📱 <strong>Instructions:</strong>
+                </p>
+                <p className="text-sm text-slate-400 mt-2">
+                  1. Click the "{actionButtons[actionType]}" button in the popup
+                </p>
+                <p className="text-sm text-slate-400">
+                  2. Close the popup when done
+                </p>
+                <p className="text-sm text-slate-400">
+                  3. Come back here to verify and earn your reward
+                </p>
               </div>
 
               <div className="flex gap-3">
-                <Button 
-                  onClick={() => setStep('ready')} 
+                <Button
+                  onClick={() => setStep('ready')}
                   variant="outline"
                   className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
                 >
-                  Back
+                  Cancel
                 </Button>
-                <Button 
+                <Button
                   onClick={handleActionCompleted}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
@@ -220,14 +267,14 @@ export function TwitterActionVerifier({
               </div>
 
               <div className="flex gap-3">
-                <Button 
-                  onClick={() => setStep('action')} 
+                <Button
+                  onClick={() => setStep('action')}
                   variant="outline"
                   className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
                 >
                   No, try again
                 </Button>
-                <Button 
+                <Button
                   onClick={handleVerify}
                   disabled={isVerifying}
                   className="flex-1 bg-green-600 hover:bg-green-700"
