@@ -10,21 +10,6 @@ const nextConfig = {
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
   },
-  async redirects() {
-    return [
-      {
-        source: '/:path*',
-        has: [
-          {
-            type: 'host',
-            value: 'www.socialimpact.fun',
-          },
-        ],
-        destination: 'https://socialimpact.fun/:path*',
-        permanent: true,
-      },
-    ]
-  },
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
