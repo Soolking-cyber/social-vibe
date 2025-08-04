@@ -46,13 +46,23 @@ export const CONTRACT_ADDRESSES = {
 // Contract interaction service
 export class JobsFactoryService {
     public contract: any;
-    private provider: ethers.JsonRpcProvider;
+    private walletService: any;
     private contractAddress: string;
 
-    constructor(contractAddress: string, providerUrl: string) {
+    constructor(contractAddress: string, walletService: any) {
         this.contractAddress = contractAddress;
-        this.provider = new ethers.JsonRpcProvider(providerUrl);
-        this.contract = new ethers.Contract(contractAddress, JOBS_FACTORY_ABI, this.provider);
+        this.walletService = walletService;
+        // Contract will be initialized with provider when needed
+        this.contract = null;
+    }
+
+    // Initialize contract with current working provider
+    private async initializeContract() {
+        if (!this.contract) {
+            const provider = await this.walletService.getWorkingProvider();
+            this.contract = new ethers.Contract(this.contractAddress, JOBS_FACTORY_ABI, provider);
+        }
+        return this.contract;
     }
 
     // Connect with signer for transactions
@@ -194,9 +204,12 @@ export class USDCService {
 
 // Initialize services only if contract address is available
 export const createJobsFactoryService = (contractAddress: string) => {
+    // Import wallet service dynamically to avoid circular imports
+    const { walletService } = require('./wallet');
+    
     return new JobsFactoryService(
         contractAddress,
-        `https://sepolia.infura.io/v3/${process.env.INFURA_PROJECT_ID}`
+        walletService
     );
 };
 

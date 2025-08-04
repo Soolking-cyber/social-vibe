@@ -1,11 +1,18 @@
 import { ethers } from 'ethers';
 import crypto from 'crypto';
 
-// Sepolia testnet configuration
+// Sepolia testnet configuration with multiple RPC providers
 export const SEPOLIA_CONFIG = {
   chainId: 11155111,
   name: 'Sepolia',
-  rpcUrl: `https://sepolia.infura.io/v3/${process.env.INFURA_PROJECT_ID}`,
+  rpcUrls: [
+    `https://sepolia.infura.io/v3/${process.env.INFURA_PROJECT_ID}`,
+    'https://sepolia.drpc.org',
+    'https://rpc.sepolia.org',
+    'https://ethereum-sepolia.blockpi.network/v1/rpc/public',
+    'https://sepolia.gateway.tenderly.co',
+    'https://gateway.tenderly.co/public/sepolia'
+  ].filter(url => !url.includes('undefined')), // Remove URLs with undefined env vars
   blockExplorer: 'https://sepolia.etherscan.io',
   // USDC contract address on Sepolia testnet
   usdcAddress: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Confirmed USDC contract on Sepolia
@@ -23,16 +30,73 @@ export const ERC20_ABI = [
 const ENCRYPTION_KEY = process.env.WALLET_ENCRYPTION_KEY || 'default-32-char-key-change-this!';
 
 export class WalletService {
-  private provider: ethers.JsonRpcProvider;
+  private providers: ethers.JsonRpcProvider[];
+  private currentProviderIndex: number = 0;
 
   constructor() {
-    try {
-      this.provider = new ethers.JsonRpcProvider(SEPOLIA_CONFIG.rpcUrl);
-    } catch (error) {
-      console.error('Failed to initialize provider:', error);
-      // Fallback to a public RPC if Infura fails
-      this.provider = new ethers.JsonRpcProvider('https://sepolia.drpc.org');
+    // Initialize multiple providers for fallback
+    this.providers = SEPOLIA_CONFIG.rpcUrls.map(url => {
+      try {
+        return new ethers.JsonRpcProvider(url);
+      } catch (error) {
+        console.error(`Failed to initialize provider ${url}:`, error);
+        return null;
+      }
+    }).filter(Boolean) as ethers.JsonRpcProvider[];
+
+    if (this.providers.length === 0) {
+      throw new Error('No RPC providers could be initialized');
     }
+
+    console.log(`Initialized ${this.providers.length} RPC providers for Sepolia`);
+  }
+
+  // Get current provider with automatic failover
+  private async getWorkingProvider(): Promise<ethers.JsonRpcProvider> {
+    for (let i = 0; i < this.providers.length; i++) {
+      const providerIndex = (this.currentProviderIndex + i) % this.providers.length;
+      const provider = this.providers[providerIndex];
+      
+      try {
+        // Test the provider with a simple call
+        await provider.getBlockNumber();
+        this.currentProviderIndex = providerIndex;
+        return provider;
+      } catch (error) {
+        console.error(`Provider ${providerIndex} failed:`, error);
+        continue;
+      }
+    }
+    
+    throw new Error('All RPC providers are currently unavailable');
+  }
+
+  // Retry logic for RPC calls
+  private async withRetry<T>(operation: (provider: ethers.JsonRpcProvider) => Promise<T>, maxRetries: number = 3): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const provider = await this.getWorkingProvider();
+        return await operation(provider);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`Attempt ${attempt + 1} failed:`, lastError.message);
+        
+        // If it's a rate limit error, try next provider immediately
+        if (lastError.message.includes('Too Many Requests') || lastError.message.includes('429')) {
+          this.currentProviderIndex = (this.currentProviderIndex + 1) % this.providers.length;
+          continue;
+        }
+        
+        // For other errors, wait before retrying
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
+      }
+    }
+    
+    throw lastError || new Error('All retry attempts failed');
   }
 
   // Generate a new wallet
@@ -92,41 +156,45 @@ export class WalletService {
     }
   }
 
-  // Get ETH balance
+  // Get ETH balance with retry logic
   async getEthBalance(address: string): Promise<string> {
     try {
-      const balance = await this.provider.getBalance(address);
-      return ethers.formatEther(balance);
+      return await this.withRetry(async (provider) => {
+        const balance = await provider.getBalance(address);
+        return ethers.formatEther(balance);
+      });
     } catch (error) {
-      console.error('Error fetching ETH balance:', error);
+      console.error('Error fetching ETH balance after retries:', error);
       return '0.0';
     }
   }
 
-  // Get USDC balance
+  // Get USDC balance with retry logic
   async getUsdcBalance(address: string): Promise<string> {
     try {
       console.log('Fetching USDC balance for address:', address);
       console.log('Using USDC contract:', SEPOLIA_CONFIG.usdcAddress);
       
-      const usdcContract = new ethers.Contract(
-        SEPOLIA_CONFIG.usdcAddress,
-        ERC20_ABI,
-        this.provider
-      );
+      return await this.withRetry(async (provider) => {
+        const usdcContract = new ethers.Contract(
+          SEPOLIA_CONFIG.usdcAddress,
+          ERC20_ABI,
+          provider
+        );
 
-      const balance = await usdcContract.balanceOf(address);
-      const decimals = await usdcContract.decimals();
-      
-      console.log('USDC balance raw:', balance.toString());
-      console.log('USDC decimals:', decimals);
+        const balance = await usdcContract.balanceOf(address);
+        const decimals = await usdcContract.decimals();
+        
+        console.log('USDC balance raw:', balance.toString());
+        console.log('USDC decimals:', decimals);
 
-      const formattedBalance = ethers.formatUnits(balance, decimals);
-      console.log('USDC balance formatted:', formattedBalance);
+        const formattedBalance = ethers.formatUnits(balance, decimals);
+        console.log('USDC balance formatted:', formattedBalance);
 
-      return formattedBalance;
+        return formattedBalance;
+      });
     } catch (error) {
-      console.error('Error fetching USDC balance:', error);
+      console.error('Error fetching USDC balance after retries:', error);
       return '0.0';
     }
   }
@@ -144,9 +212,10 @@ export class WalletService {
     return { eth, usdc };
   }
 
-  // Create wallet from private key
-  createWalletFromPrivateKey(privateKey: string): ethers.Wallet {
-    return new ethers.Wallet(privateKey, this.provider);
+  // Create wallet from private key with current working provider
+  async createWalletFromPrivateKey(privateKey: string): Promise<ethers.Wallet> {
+    const provider = await this.getWorkingProvider();
+    return new ethers.Wallet(privateKey, provider);
   }
 
   // Send ETH

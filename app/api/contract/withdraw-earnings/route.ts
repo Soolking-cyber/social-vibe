@@ -155,9 +155,9 @@ export async function POST(_request: NextRequest) {
       }
       console.log(`✅ Contract has sufficient USDC: ${contractBalance} USDC`)
 
-      // Decrypt private key and create signer
+      // Decrypt private key and create signer with working provider
       const privateKey = walletService.decrypt(user.wallet_private_key);
-      const wallet = walletService.createWalletFromPrivateKey(privateKey);
+      const wallet = await walletService.createWalletFromPrivateKey(privateKey);
 
       // Connect service with signer
       jobsFactoryService.connectSigner(wallet);
