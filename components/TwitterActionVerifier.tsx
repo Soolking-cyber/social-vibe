@@ -30,7 +30,7 @@ export function TwitterActionVerifier({
   const startCompletion = () => {
     setStep('completing');
     setProgress(0);
-    
+
     // Simulate automatic completion with progress
     progressRef.current = setInterval(() => {
       setProgress(prev => {
@@ -49,7 +49,7 @@ export function TwitterActionVerifier({
   const handleVerify = async () => {
     setStep('verified');
     setShowConfetti(true);
-    
+
     // Call the verification callback after showing confetti
     setTimeout(() => {
       onVerified();
@@ -131,7 +131,7 @@ export function TwitterActionVerifier({
                   </div>
                 )}
               </div>
-              
+
               <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
                 <p className="text-sm text-blue-300">
                   <Sparkles className="h-4 w-4 inline mr-2" />
@@ -156,7 +156,7 @@ export function TwitterActionVerifier({
                   <div className="w-20 h-20 border-4 border-blue-500/20 rounded-full animate-ping"></div>
                 </div>
               </div>
-              
+
               <div>
                 <p className="font-medium text-white text-lg">Completing {actionType}...</p>
                 <p className="text-sm text-slate-400 mt-2">
@@ -166,7 +166,7 @@ export function TwitterActionVerifier({
 
               <div className="space-y-2">
                 <div className="w-full bg-slate-800 rounded-full h-3">
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full transition-all duration-100"
                     style={{ width: `${progress}%` }}
                   ></div>
@@ -184,7 +184,7 @@ export function TwitterActionVerifier({
                   <div className="w-24 h-24 border-4 border-green-500/30 rounded-full animate-ping"></div>
                 </div>
               </div>
-              
+
               <div>
                 <p className="font-bold text-green-400 text-xl">Action Completed!</p>
                 <p className="text-sm text-slate-400 mt-2">
@@ -217,7 +217,7 @@ export function TwitterActionVerifier({
                     <div className="w-32 h-32 border-4 border-yellow-500/30 rounded-full animate-ping"></div>
                   </div>
                 </div>
-                
+
                 <div>
                   <p className="font-bold text-yellow-400 text-2xl">Congratulations!</p>
                   <p className="text-lg text-green-400 mt-2">
