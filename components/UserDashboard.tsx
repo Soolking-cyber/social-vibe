@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { TwitterHandleManager } from './TwitterHandleManager';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -343,6 +344,9 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Twitter Handle Management */}
+      <TwitterHandleManager onUpdate={fetchUserStats} />
     </div>
   );
 }

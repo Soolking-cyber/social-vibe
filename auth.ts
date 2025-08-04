@@ -41,9 +41,40 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name
         token.image = user.image
       }
-      // Capture Twitter username from profile
+      // Capture Twitter username from profile during login
       if (profile && account?.provider === 'twitter') {
-        token.twitterHandle = (profile as any).data?.username || (profile as any).username
+        const twitterHandle = (profile as any).data?.username || (profile as any).username;
+        if (twitterHandle) {
+          token.twitterHandle = twitterHandle;
+          console.log('🔐 Captured Twitter handle during auth:', twitterHandle);
+          
+          // Store Twitter handle securely in database immediately
+          try {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.SUPABASE_SERVICE_ROLE_KEY!
+            );
+            
+            const userIdentifier = user?.email || user?.name;
+            if (userIdentifier) {
+              await supabase
+                .from('users')
+                .upsert({
+                  name: userIdentifier,
+                  email: user?.email || `${userIdentifier}@twitter.local`,
+                  twitter_handle: twitterHandle,
+                  image: user?.image
+                }, {
+                  onConflict: 'name',
+                  ignoreDuplicates: false
+                });
+              console.log('✅ Twitter handle stored securely in database');
+            }
+          } catch (error) {
+            console.error('❌ Failed to store Twitter handle:', error);
+          }
+        }
       }
       return token
     },
@@ -53,7 +84,7 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email as string
         session.user.name = token.name as string
         session.user.image = token.image as string
-        // Add Twitter handle to session
+        // Add Twitter handle to session (but don't rely on it - fetch from DB instead)
         if (token.twitterHandle) {
           (session.user as any).twitterHandle = token.twitterHandle as string
         }

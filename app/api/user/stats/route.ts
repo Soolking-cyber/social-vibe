@@ -63,13 +63,17 @@ export async function GET() {
       // Generate wallet for new user
       const wallet = walletService.generateWallet();
       
+      // Capture Twitter handle from session if available
+      const twitterHandle = (session.user as any).twitterHandle;
+      console.log('Creating new user with Twitter handle:', twitterHandle);
+
       const { data: newUser, error: createError } = await supabase
         .from('users')
         .insert({
           email: session.user.email || `${session.user.name}@twitter.local`,
           name: session.user.name || userIdentifier,
           image: session.user.image || null,
-          twitter_handle: (session.user as any).twitterHandle || null,
+          twitter_handle: twitterHandle || null,
           balance: 10.00, // Give new users $10 to start
           wallet_address: wallet.address,
           wallet_private_key: walletService.encrypt(wallet.privateKey),

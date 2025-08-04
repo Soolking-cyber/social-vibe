@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserDashboard from '../../components/UserDashboard';
+import { TwitterActionVerifier } from '../../components/TwitterActionVerifier';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,8 @@ export default function Marketplace() {
     const [completingJobs, setCompletingJobs] = useState<Set<number>>(new Set());
     const [verifyingJobs, setVerifyingJobs] = useState<Set<number>>(new Set());
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
+    const [popupJob, setPopupJob] = useState<Job | null>(null);
+    const [showPopup, setShowPopup] = useState(false);
 
     useEffect(() => {
         fetchJobs();
@@ -106,7 +109,7 @@ export default function Marketplace() {
         }
     };
 
-    const openTwitterPost = async (jobId: number) => {
+    const openTwitterAction = async (jobId: number) => {
         try {
             setCompletingJobs(prev => new Set(prev).add(jobId));
 
@@ -118,25 +121,12 @@ export default function Marketplace() {
             }
 
             const job = await jobResponse.json();
-
-            // Open Twitter post in new tab
-            const twitterUrl = job.tweetUrl;
-            const newTab = window.open(twitterUrl, '_blank');
-
-            if (!newTab) {
-                alert('Please allow popups to complete this job');
-                return;
-            }
-
-            alert(
-                `Please complete the ${job.actionType} action on the tweet that just opened.\n\n` +
-                `After completing the action, click "Verify Completion" to earn ${job.pricePerAction} USDC.\n\n` +
-                `Note: You can only complete each job once.`
-            );
+            setPopupJob(job);
+            setShowPopup(true);
 
         } catch (error) {
-            console.error('Error opening Twitter post:', error);
-            alert('Failed to open Twitter post. Please try again.');
+            console.error('Error getting job details:', error);
+            alert('Failed to get job details. Please try again.');
         } finally {
             setCompletingJobs(prev => {
                 const newSet = new Set(prev);
@@ -146,15 +136,17 @@ export default function Marketplace() {
         }
     };
 
-    const verifyCompletion = async (jobId: number) => {
+    const handlePopupVerified = async () => {
+        if (!popupJob) return;
+
         try {
-            setVerifyingJobs(prev => new Set(prev).add(jobId));
+            setVerifyingJobs(prev => new Set(prev).add(popupJob.id));
 
             // Call the completion API
             const response = await fetch('/api/jobs/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId: jobId.toString() })
+                body: JSON.stringify({ jobId: popupJob.id.toString() })
             });
 
             const result = await response.json();
@@ -165,11 +157,15 @@ export default function Marketplace() {
                 // Update the specific job to show as completed
                 setJobs(prevJobs =>
                     prevJobs.map(job =>
-                        job.id === jobId
+                        job.id === popupJob.id
                             ? { ...job, hasUserCompleted: true, canComplete: false }
                             : job
                     )
                 );
+
+                // Close popup
+                setShowPopup(false);
+                setPopupJob(null);
             } else {
                 alert(`Error: ${result.error}`);
             }
@@ -179,10 +175,15 @@ export default function Marketplace() {
         } finally {
             setVerifyingJobs(prev => {
                 const newSet = new Set(prev);
-                newSet.delete(jobId);
+                newSet.delete(popupJob.id);
                 return newSet;
             });
         }
+    };
+
+    const handlePopupClose = () => {
+        setShowPopup(false);
+        setPopupJob(null);
     };
 
     // Function to get job status for sorting
@@ -200,7 +201,7 @@ export default function Marketplace() {
             const statusOrder = { incomplete: 1, created: 2, completed: 3, unavailable: 4 };
             const aStatus = getJobStatus(a);
             const bStatus = getJobStatus(b);
-            
+
             if (statusOrder[aStatus] !== statusOrder[bStatus]) {
                 return statusOrder[aStatus] - statusOrder[bStatus];
             }
@@ -247,8 +248,8 @@ export default function Marketplace() {
                                         onClick={() => setSortBy('status')}
                                         variant={sortBy === 'status' ? 'default' : 'outline'}
                                         size="sm"
-                                        className={sortBy === 'status' 
-                                            ? 'bg-blue-600 hover:bg-blue-700' 
+                                        className={sortBy === 'status'
+                                            ? 'bg-blue-600 hover:bg-blue-700'
                                             : 'border-slate-700 text-slate-300 hover:bg-slate-800'
                                         }
                                     >
@@ -258,8 +259,8 @@ export default function Marketplace() {
                                         onClick={() => setSortBy('newest')}
                                         variant={sortBy === 'newest' ? 'default' : 'outline'}
                                         size="sm"
-                                        className={sortBy === 'newest' 
-                                            ? 'bg-blue-600 hover:bg-blue-700' 
+                                        className={sortBy === 'newest'
+                                            ? 'bg-blue-600 hover:bg-blue-700'
                                             : 'border-slate-700 text-slate-300 hover:bg-slate-800'
                                         }
                                     >
@@ -269,8 +270,8 @@ export default function Marketplace() {
                                         onClick={() => setSortBy('price')}
                                         variant={sortBy === 'price' ? 'default' : 'outline'}
                                         size="sm"
-                                        className={sortBy === 'price' 
-                                            ? 'bg-blue-600 hover:bg-blue-700' 
+                                        className={sortBy === 'price'
+                                            ? 'bg-blue-600 hover:bg-blue-700'
                                             : 'border-slate-700 text-slate-300 hover:bg-slate-800'
                                         }
                                     >
@@ -285,12 +286,12 @@ export default function Marketplace() {
                                         acc[status] = (acc[status] || 0) + 1;
                                         return acc;
                                     }, {} as Record<string, number>);
-                                    
+
                                     const parts = [];
                                     if (counts.incomplete) parts.push(`${counts.incomplete} available`);
                                     if (counts.created) parts.push(`${counts.created} created by you`);
                                     if (counts.completed) parts.push(`${counts.completed} completed`);
-                                    
+
                                     return parts.length > 0 ? parts.join(' • ') : `${jobs.length} jobs`;
                                 })()}
                             </div>
@@ -303,143 +304,132 @@ export default function Marketplace() {
                     {sortedJobs.map((job) => {
                         const jobStatus = getJobStatus(job);
                         return (
-                        <Card key={job.id} className={`bg-slate-900 border-slate-800 ${
-                            jobStatus === 'incomplete' ? 'ring-2 ring-blue-500/20' :
-                            jobStatus === 'created' ? 'ring-2 ring-purple-500/20' :
-                            jobStatus === 'completed' ? 'ring-2 ring-green-500/20' : ''
-                        }`}>
-                            <CardHeader>
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <div className="flex items-center space-x-2 mb-2">
-                                            <CardTitle className="text-white capitalize">
-                                                {job.actionType} Job
-                                            </CardTitle>
-                                            {/* Status Badge */}
-                                            <Badge
-                                                variant="outline"
-                                                className={
-                                                    jobStatus === 'incomplete' ? 'border-blue-500 text-blue-400 bg-blue-500/10' :
-                                                    jobStatus === 'created' ? 'border-purple-500 text-purple-400 bg-purple-500/10' :
-                                                    jobStatus === 'completed' ? 'border-green-500 text-green-400 bg-green-500/10' :
-                                                    'border-slate-500 text-slate-400 bg-slate-500/10'
-                                                }
-                                            >
-                                                {jobStatus === 'incomplete' ? 'Available' :
-                                                 jobStatus === 'created' ? 'Your Job' :
-                                                 jobStatus === 'completed' ? 'Completed' : 'Unavailable'}
-                                            </Badge>
-                                        </div>
-                                        <div className="flex items-center space-x-4">
-                                            <span className="text-2xl font-bold text-green-400">
-                                                ${parseFloat(job.pricePerAction).toFixed(3)}
-                                            </span>
-                                            <span className="text-slate-400">per {job.actionType}</span>
-                                        </div>
-                                    </div>
-                                    <Badge
-                                        variant={job.isActive ? 'default' : 'secondary'}
-                                        className={job.isActive ? 'bg-green-600' : 'bg-slate-600'}
-                                    >
-                                        {job.isActive ? 'active' : 'completed'}
-                                    </Badge>
-                                </div>
-                            </CardHeader>
-                            <CardContent className="space-y-4">
-                                {/* Tweet URL */}
-                                <div className="bg-slate-800 p-3 rounded-lg">
-                                    <p className="text-sm text-slate-400 mb-1">Tweet URL:</p>
-                                    <a
-                                        href={job.tweetUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-400 hover:text-blue-300 text-sm break-all"
-                                    >
-                                        {job.tweetUrl}
-                                    </a>
-                                </div>
-
-                                {/* Comment Text */}
-                                {job.commentText && job.commentText.trim() && (
-                                    <div className="bg-blue-900/20 border border-blue-800 p-3 rounded-lg">
-                                        <p className="text-sm text-blue-400 mb-1">Comment to post:</p>
-                                        <p className="text-white text-sm">"{job.commentText}"</p>
-                                    </div>
-                                )}
-
-                                {/* Progress */}
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-slate-400">
-                                            Progress: {job.completedActions}/{job.maxActions}
-                                        </span>
-                                        <span className="text-slate-400">
-                                            ${(parseFloat(job.totalBudget) - (job.completedActions * parseFloat(job.pricePerAction))).toFixed(2)} remaining
-                                        </span>
-                                    </div>
-                                    <Progress
-                                        value={(job.completedActions / job.maxActions) * 100}
-                                        className="h-2"
-                                    />
-                                </div>
-
-                                {/* Action Buttons */}
-                                {session && job.isActive && job.remainingActions > 0 && (
-                                    <div className="space-y-2">
-                                        {job.hasUserCompleted ? (
-                                            // Job completed - show success state
-                                            <Button
-                                                disabled
-                                                className="w-full bg-green-600 text-white cursor-not-allowed"
-                                            >
-                                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                                Completed - Earned ${parseFloat(job.pricePerAction).toFixed(3)}
-                                            </Button>
-                                        ) : (
-                                            // Job not completed - show action buttons
-                                            <>
-                                                <Button
-                                                    onClick={() => openTwitterPost(job.id)}
-                                                    disabled={completingJobs.has(job.id)}
-                                                    className="w-full bg-blue-600 hover:bg-blue-700"
-                                                >
-                                                    {completingJobs.has(job.id) ? (
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                            Opening...
-                                                        </div>
-                                                    ) : (
-                                                        `Open Tweet to ${job.actionType} - ${parseFloat(job.pricePerAction).toFixed(3)} USDC`
-                                                    )}
-                                                </Button>
-                                                <Button
-                                                    onClick={() => verifyCompletion(job.id)}
-                                                    disabled={verifyingJobs.has(job.id)}
+                            <Card key={job.id} className={`bg-slate-900 border-slate-800 ${jobStatus === 'incomplete' ? 'ring-2 ring-blue-500/20' :
+                                    jobStatus === 'created' ? 'ring-2 ring-purple-500/20' :
+                                        jobStatus === 'completed' ? 'ring-2 ring-green-500/20' : ''
+                                }`}>
+                                <CardHeader>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="flex items-center space-x-2 mb-2">
+                                                <CardTitle className="text-white capitalize">
+                                                    {job.actionType} Job
+                                                </CardTitle>
+                                                {/* Status Badge */}
+                                                <Badge
                                                     variant="outline"
-                                                    className="w-full border-green-600 text-green-400 hover:bg-green-600/10"
+                                                    className={
+                                                        jobStatus === 'incomplete' ? 'border-blue-500 text-blue-400 bg-blue-500/10' :
+                                                            jobStatus === 'created' ? 'border-purple-500 text-purple-400 bg-purple-500/10' :
+                                                                jobStatus === 'completed' ? 'border-green-500 text-green-400 bg-green-500/10' :
+                                                                    'border-slate-500 text-slate-400 bg-slate-500/10'
+                                                    }
                                                 >
-                                                    {verifyingJobs.has(job.id) ? (
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full animate-spin"></div>
-                                                            Verifying...
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                            </svg>
-                                                            Verify Completion & Earn USDC
-                                                        </>
-                                                    )}
-                                                </Button>
-                                            </>
-                                        )}
+                                                    {jobStatus === 'incomplete' ? 'Available' :
+                                                        jobStatus === 'created' ? 'Your Job' :
+                                                            jobStatus === 'completed' ? 'Completed' : 'Unavailable'}
+                                                </Badge>
+                                            </div>
+                                            <div className="flex items-center space-x-4">
+                                                <span className="text-2xl font-bold text-green-400">
+                                                    ${parseFloat(job.pricePerAction).toFixed(3)}
+                                                </span>
+                                                <span className="text-slate-400">per {job.actionType}</span>
+                                            </div>
+                                        </div>
+                                        <Badge
+                                            variant={job.isActive ? 'default' : 'secondary'}
+                                            className={job.isActive ? 'bg-green-600' : 'bg-slate-600'}
+                                        >
+                                            {job.isActive ? 'active' : 'completed'}
+                                        </Badge>
                                     </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {/* Tweet URL */}
+                                    <div className="bg-slate-800 p-3 rounded-lg">
+                                        <p className="text-sm text-slate-400 mb-1">Tweet URL:</p>
+                                        <a
+                                            href={job.tweetUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-400 hover:text-blue-300 text-sm break-all"
+                                        >
+                                            {job.tweetUrl}
+                                        </a>
+                                    </div>
+
+                                    {/* Comment Text */}
+                                    {job.commentText && job.commentText.trim() && (
+                                        <div className="bg-blue-900/20 border border-blue-800 p-3 rounded-lg">
+                                            <p className="text-sm text-blue-400 mb-1">Comment to post:</p>
+                                            <p className="text-white text-sm">"{job.commentText}"</p>
+                                        </div>
+                                    )}
+
+                                    {/* Progress */}
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-400">
+                                                Progress: {job.completedActions}/{job.maxActions}
+                                            </span>
+                                            <span className="text-slate-400">
+                                                ${(parseFloat(job.totalBudget) - (job.completedActions * parseFloat(job.pricePerAction))).toFixed(2)} remaining
+                                            </span>
+                                        </div>
+                                        <Progress
+                                            value={(job.completedActions / job.maxActions) * 100}
+                                            className="h-2"
+                                        />
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    {session && job.isActive && job.remainingActions > 0 && (
+                                        <div className="space-y-2">
+                                            {job.hasUserCompleted ? (
+                                                // Job completed - show success state
+                                                <Button
+                                                    disabled
+                                                    className="w-full bg-green-600 text-white cursor-not-allowed"
+                                                >
+                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                    Completed - Earned ${parseFloat(job.pricePerAction).toFixed(3)}
+                                                </Button>
+                                            ) : (
+                                                // Job not completed - show action buttons
+                                                <>
+                                                    <Button
+                                                        onClick={() => openTwitterAction(job.id)}
+                                                        disabled={completingJobs.has(job.id) || verifyingJobs.has(job.id)}
+                                                        className="w-full bg-blue-600 hover:bg-blue-700"
+                                                    >
+                                                        {completingJobs.has(job.id) ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                Loading...
+                                                            </div>
+                                                        ) : verifyingJobs.has(job.id) ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                Verifying...
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                </svg>
+                                                                Complete {job.actionType} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
+                                                            </>
+                                                        )}
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
                         );
                     })}
                 </div>
@@ -460,6 +450,18 @@ export default function Marketplace() {
                     </div>
                 )}
             </div>
+
+            {/* Twitter Action Verifier */}
+            {popupJob && (
+                <TwitterActionVerifier
+                    isOpen={showPopup}
+                    onClose={handlePopupClose}
+                    onVerified={handlePopupVerified}
+                    tweetUrl={popupJob.tweetUrl}
+                    actionType={popupJob.actionType}
+                    commentText={popupJob.commentText}
+                />
+            )}
         </div>
     );
 }
