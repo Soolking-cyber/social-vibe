@@ -50,7 +50,7 @@ A decentralized social media engagement platform built on Ethereum that allows u
 4. **Configure environment variables in `.env.local`:**
    ```env
    # NextAuth
-   NEXTAUTH_URL=http://localhost:3000
+   NEXTAUTH_URL=https://socialimpact.fun
    NEXTAUTH_SECRET=your-secret-key
 
    # Twitter OAuth
@@ -188,7 +188,7 @@ For support and questions:
 
 ## 🔗 Links
 
-- [Live Demo](https://social-vibe.vercel.app)
+- [Live Demo](https://socialimpact.fun)
 - [Smart Contract](https://sepolia.etherscan.io/address/your-contract-address)
 - [Documentation](https://github.com/Soolking-cyber/social-vibe/wiki)
 

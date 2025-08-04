@@ -89,7 +89,7 @@ git push -u origin main
 
 ### Environment Variables for Production
 ```env
-NEXTAUTH_URL=https://your-domain.com
+NEXTAUTH_URL=https://socialimpact.fun
 NEXTAUTH_SECRET=production-secret
 TWITTER_CLIENT_ID=prod-client-id
 TWITTER_CLIENT_SECRET=prod-client-secret

@@ -26,7 +26,7 @@ This guide will help you deploy the Social Impact Platform to production.
 1. Create a Twitter Developer account
 2. Create a new app with OAuth 2.0
 3. Get Client ID, Client Secret, and Bearer Token
-4. Set callback URL: `https://your-domain.com/api/auth/callback/twitter`
+4. Set callback URL: `https://socialimpact.fun/api/auth/callback/twitter`
 
 ### 2. Supabase Setup
 1. Create a new Supabase project
