@@ -72,23 +72,28 @@ export class JobsFactoryService {
 
     // View functions
     async getJob(jobId: number) {
-        return await this.contract.getJob(jobId);
+        const contract = await this.initializeContract();
+        return await contract.getJob(jobId);
     }
 
     async getUserEarnings(userAddress: string) {
-        return await this.contract.getUserEarnings(userAddress);
+        const contract = await this.initializeContract();
+        return await contract.getUserEarnings(userAddress);
     }
 
     async getActiveJobs() {
-        return await this.contract.getActiveJobs();
+        const contract = await this.initializeContract();
+        return await contract.getActiveJobs();
     }
 
     async hasUserCompletedJob(jobId: number, userAddress: string) {
-        return await this.contract.hasUserCompletedJob(jobId, userAddress);
+        const contract = await this.initializeContract();
+        return await contract.hasUserCompletedJob(jobId, userAddress);
     }
 
     async getContractBalance() {
-        return await this.contract.getContractBalance();
+        const contract = await this.initializeContract();
+        return await contract.getContractBalance();
     }
 
     // Transaction functions
@@ -99,6 +104,11 @@ export class JobsFactoryService {
         maxActions: number,
         commentText: string = ""
     ) {
+        // Ensure we have a signer-connected contract for transactions
+        if (!this.contract) {
+            throw new Error('Contract not connected with signer. Call connectSigner() first.');
+        }
+
         // Ensure pricePerAction has no more than 6 decimal places for USDC
         const cleanPrice = parseFloat(pricePerAction).toFixed(6);
         console.log(`Contract createJob: Converting ${pricePerAction} to ${cleanPrice}`);
@@ -113,10 +123,16 @@ export class JobsFactoryService {
     }
 
     async completeJob(jobId: number) {
+        if (!this.contract) {
+            throw new Error('Contract not connected with signer. Call connectSigner() first.');
+        }
         return await this.contract.completeJob(jobId);
     }
 
     async withdrawEarnings() {
+        if (!this.contract) {
+            throw new Error('Contract not connected with signer. Call connectSigner() first.');
+        }
         return await this.contract.withdrawEarnings();
     }
 
@@ -130,8 +146,9 @@ export class JobsFactoryService {
     }
 
     // Event listeners
-    onJobCreated(callback: (jobId: number, creator: string, details: any) => void) {
-        this.contract.on('JobCreated', (jobId: any, creator: string, tweetUrl: string, actionType: string, pricePerAction: any, maxActions: any, totalBudget: any) => {
+    async onJobCreated(callback: (jobId: number, creator: string, details: any) => void) {
+        const contract = await this.initializeContract();
+        contract.on('JobCreated', (jobId: any, creator: string, tweetUrl: string, actionType: string, pricePerAction: any, maxActions: any, totalBudget: any) => {
             callback(Number(jobId), creator, {
                 tweetUrl,
                 actionType,
@@ -142,14 +159,16 @@ export class JobsFactoryService {
         });
     }
 
-    onJobCompleted(callback: (jobId: number, user: string, reward: bigint) => void) {
-        this.contract.on('JobCompleted', (jobId: any, user: string, reward: any) => {
+    async onJobCompleted(callback: (jobId: number, user: string, reward: bigint) => void) {
+        const contract = await this.initializeContract();
+        contract.on('JobCompleted', (jobId: any, user: string, reward: any) => {
             callback(Number(jobId), user, reward);
         });
     }
 
-    onEarningsWithdrawn(callback: (user: string, amount: bigint) => void) {
-        this.contract.on('EarningsWithdrawn', (user: string, amount: any) => {
+    async onEarningsWithdrawn(callback: (user: string, amount: bigint) => void) {
+        const contract = await this.initializeContract();
+        contract.on('EarningsWithdrawn', (user: string, amount: any) => {
             callback(user, amount);
         });
     }
@@ -206,7 +225,7 @@ export class USDCService {
 export const createJobsFactoryService = (contractAddress: string) => {
     // Import wallet service dynamically to avoid circular imports
     const { walletService } = require('./wallet');
-    
+
     return new JobsFactoryService(
         contractAddress,
         walletService
