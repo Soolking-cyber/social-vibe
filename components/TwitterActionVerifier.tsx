@@ -50,19 +50,19 @@ export function TwitterActionVerifier({
 
   const openTwitterAction = () => {
     const url = getActionUrl();
-    
+
     // Open Twitter in a small, centered popup window
     const popup = window.open(
       url,
       'twitter-action',
-      'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' + 
+      'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' +
       (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
     );
-    
+
     if (popup) {
       setPopupWindow(popup);
       setStep('action');
-      
+
       // Monitor popup for closure
       const checkClosed = setInterval(() => {
         if (popup.closed) {

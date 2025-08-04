@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserDashboard from '../../components/UserDashboard';
-import { TwitterActionVerifier } from '../../components/TwitterActionVerifier';
+import { SimpleVerificationDialog } from '../../components/SimpleVerificationDialog';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -116,6 +116,27 @@ export default function Marketplace() {
         }
     };
 
+    const extractTweetId = (url: string): string => {
+        const match = url.match(/status\/(\d+)/);
+        return match ? match[1] : '';
+    };
+
+    const getActionUrl = (job: Job) => {
+        const tweetId = extractTweetId(job.tweetUrl);
+        
+        switch (job.actionType) {
+            case 'like':
+                return `https://twitter.com/intent/like?tweet_id=${tweetId}`;
+            case 'retweet':
+                return `https://twitter.com/intent/retweet?tweet_id=${tweetId}`;
+            case 'comment':
+                const encodedComment = encodeURIComponent(job.commentText || '');
+                return `https://twitter.com/intent/tweet?in_reply_to=${tweetId}&text=${encodedComment}`;
+            default:
+                return job.tweetUrl;
+        }
+    };
+
     const openTwitterAction = async (jobId: number) => {
         try {
             setCompletingJobs(prev => new Set(prev).add(jobId));
@@ -128,13 +149,36 @@ export default function Marketplace() {
             }
 
             const job = await jobResponse.json();
-            // Normalize action type for the popup
+            // Normalize action type
             const normalizedJob = {
                 ...job,
                 actionType: normalizeActionType(job.actionType)
             };
+
+            // Open Twitter directly in popup/new tab
+            const url = getActionUrl(normalizedJob);
+            const popup = window.open(
+                url,
+                'twitter-action',
+                'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' + 
+                (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
+            );
+
+            // Set job for verification after popup closes
             setPopupJob(normalizedJob);
-            setShowPopup(true);
+
+            // Monitor popup closure and show verification dialog
+            if (popup) {
+                const checkClosed = setInterval(() => {
+                    if (popup.closed) {
+                        clearInterval(checkClosed);
+                        setShowPopup(true);
+                    }
+                }, 1000);
+            } else {
+                // If popup blocked, show verification dialog immediately
+                setTimeout(() => setShowPopup(true), 1000);
+            }
 
         } catch (error) {
             console.error('Error getting job details:', error);
@@ -463,15 +507,14 @@ export default function Marketplace() {
                 )}
             </div>
 
-            {/* Twitter Action Verifier */}
+            {/* Simple Verification Dialog */}
             {popupJob && (
-                <TwitterActionVerifier
+                <SimpleVerificationDialog
                     isOpen={showPopup}
                     onClose={handlePopupClose}
                     onVerified={handlePopupVerified}
-                    tweetUrl={popupJob.tweetUrl}
                     actionType={popupJob.actionType}
-                    commentText={popupJob.commentText}
+                    pricePerAction={popupJob.pricePerAction}
                 />
             )}
         </div>
