@@ -71,7 +71,7 @@ export async function POST(_request: NextRequest) {
 
     // Get real-time ETH balance from blockchain (not cached)
     let realTimeEthBalance = ethBalance;
-    let balanceFetchError = null;
+    let balanceFetchError: Error | null = null;
     
     try {
       console.log(`Fetching real-time ETH balance for wallet: ${user.wallet_address}`);
@@ -90,7 +90,7 @@ export async function POST(_request: NextRequest) {
 
     } catch (balanceError) {
       console.error('Error fetching real-time ETH balance:', balanceError);
-      balanceFetchError = balanceError;
+      balanceFetchError = balanceError instanceof Error ? balanceError : new Error(String(balanceError));
       console.log(`Falling back to cached balance: ${ethBalance} ETH`);
       // Fall back to cached balance if blockchain fetch fails
     }
