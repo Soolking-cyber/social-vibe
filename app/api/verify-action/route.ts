@@ -3,10 +3,54 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/auth';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Environment variable validation
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  throw new Error('Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// Configuration
+const RATE_LIMIT_MAX_VERIFICATIONS = parseInt(process.env.RATE_LIMIT_MAX_VERIFICATIONS || '10');
+const RATE_LIMIT_WINDOW_HOURS = parseInt(process.env.RATE_LIMIT_WINDOW_HOURS || '1');
+
+// Types
+interface VerificationRequest {
+  jobId: string;
+  verificationId: string;
+  verificationResult: {
+    success: boolean;
+    confidence: 'high' | 'medium' | 'low';
+    method: string;
+    details?: string;
+  };
+  actionType: string;
+  tweetUrl: string;
+}
+
+interface ServerVerification {
+  passed: boolean;
+  reason: string;
+  score: number;
+}
+
+interface AdditionalChecks {
+  passed: boolean;
+  reason: string;
+  score: number;
+}
+
+interface FinalVerification {
+  success: boolean;
+  clientVerification: VerificationRequest['verificationResult'];
+  serverVerification: ServerVerification;
+  additionalChecks: AdditionalChecks;
+  finalScore: number;
+  timestamp: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,27 +62,48 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
+    // Parse and validate request body
+    let requestBody: VerificationRequest;
+    try {
+      requestBody = await request.json();
+    } catch (error) {
+      return NextResponse.json({
+        error: 'Invalid JSON in request body'
+      }, { status: 400 });
+    }
+
     const {
       jobId,
       verificationId,
       verificationResult,
       actionType,
       tweetUrl
-    } = await request.json();
+    } = requestBody;
 
-    console.log(`=== ACTION VERIFICATION REQUEST ===`);
-    console.log(`User: ${session.user.email || session.user.name}`);
-    console.log(`Job ID: ${jobId}`);
-    console.log(`Verification ID: ${verificationId}`);
-    console.log(`Action Type: ${actionType}`);
-    console.log(`Tweet URL: ${tweetUrl}`);
-    console.log(`Verification Result:`, verificationResult);
+    // Input validation
+    const validationError = validateRequestInput({
+      jobId,
+      verificationId,
+      verificationResult,
+      actionType,
+      tweetUrl
+    });
 
-    // Validate verification result
-    if (!verificationResult || typeof verificationResult !== 'object') {
+    if (validationError) {
       return NextResponse.json({
-        error: 'Invalid verification result'
+        error: validationError
       }, { status: 400 });
+    }
+
+    // Production logging (sanitized)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`=== ACTION VERIFICATION REQUEST ===`);
+      console.log(`User: ${session.user.email || session.user.name}`);
+      console.log(`Job ID: ${jobId}`);
+      console.log(`Verification ID: ${verificationId}`);
+      console.log(`Action Type: ${actionType}`);
+      console.log(`Tweet URL: ${tweetUrl}`);
+      console.log(`Verification Result:`, verificationResult);
     }
 
     const { success, confidence, method } = verificationResult;
@@ -121,11 +186,14 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     };
 
-    console.log(`=== FINAL VERIFICATION RESULT ===`);
-    console.log(`Success: ${finalVerification.success}`);
-    console.log(`Final Score: ${finalVerification.finalScore}`);
-    console.log(`Server Reason: ${serverVerification.reason}`);
-    console.log(`Additional Checks: ${additionalChecks.reason}`);
+    // Production logging (sanitized)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`=== FINAL VERIFICATION RESULT ===`);
+      console.log(`Success: ${finalVerification.success}`);
+      console.log(`Final Score: ${finalVerification.finalScore}`);
+      console.log(`Server Reason: ${serverVerification.reason}`);
+      console.log(`Additional Checks: ${additionalChecks.reason}`);
+    }
 
     // Log verification attempt
     await logVerificationAttempt({
@@ -146,11 +214,78 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Verification API error:', error);
+    // Sanitized error logging for production
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Verification API error:', error);
+    } else {
+      console.error('Verification API error occurred');
+    }
+
     return NextResponse.json({
       error: 'Internal server error'
     }, { status: 500 });
   }
+}
+
+function validateRequestInput({
+  jobId,
+  verificationId,
+  verificationResult,
+  actionType,
+  tweetUrl
+}: Partial<VerificationRequest>): string | null {
+  // Required fields validation
+  if (!jobId || typeof jobId !== 'string' || jobId.trim().length === 0) {
+    return 'Invalid or missing jobId';
+  }
+
+  if (!verificationId || typeof verificationId !== 'string' || verificationId.trim().length === 0) {
+    return 'Invalid or missing verificationId';
+  }
+
+  if (!actionType || typeof actionType !== 'string') {
+    return 'Invalid or missing actionType';
+  }
+
+  if (!['like', 'retweet', 'comment'].includes(actionType)) {
+    return 'Invalid actionType. Must be like, retweet, or comment';
+  }
+
+  if (!tweetUrl || typeof tweetUrl !== 'string') {
+    return 'Invalid or missing tweetUrl';
+  }
+
+  // Tweet URL format validation
+  const tweetUrlPattern = /^https?:\/\/(twitter\.com|x\.com)\/\w+\/status\/\d+/;
+  if (!tweetUrlPattern.test(tweetUrl)) {
+    return 'Invalid tweet URL format';
+  }
+
+  // Verification result validation
+  if (!verificationResult || typeof verificationResult !== 'object') {
+    return 'Invalid or missing verificationResult';
+  }
+
+  const { success, confidence, method } = verificationResult;
+
+  if (typeof success !== 'boolean') {
+    return 'Invalid verificationResult.success - must be boolean';
+  }
+
+  if (!confidence || !['high', 'medium', 'low'].includes(confidence)) {
+    return 'Invalid verificationResult.confidence - must be high, medium, or low';
+  }
+
+  if (!method || typeof method !== 'string' || method.trim().length === 0) {
+    return 'Invalid or missing verificationResult.method';
+  }
+
+  // Security: Prevent excessively long inputs
+  if (jobId.length > 100 || verificationId.length > 100 || tweetUrl.length > 500) {
+    return 'Input parameters exceed maximum allowed length';
+  }
+
+  return null;
 }
 
 async function performAdditionalVerificationChecks({
@@ -201,19 +336,19 @@ async function performAdditionalVerificationChecks({
       };
     }
 
-    // Check rate limiting (max 10 verifications per hour per user)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Check rate limiting (configurable)
+    const rateLimitWindow = new Date(Date.now() - RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
     const { count, error: rateLimitError } = await supabase
       .from('verification_logs')
       .select('*', { count: 'exact' })
       .eq('user_email', userEmail)
-      .gte('created_at', oneHourAgo);
+      .gte('created_at', rateLimitWindow);
 
     // If table doesn't exist, skip rate limiting
-    if (!rateLimitError && count && count >= 10) {
+    if (!rateLimitError && count && count >= RATE_LIMIT_MAX_VERIFICATIONS) {
       return {
         passed: false,
-        reason: 'Rate limit exceeded (max 10 verifications per hour)',
+        reason: `Rate limit exceeded (max ${RATE_LIMIT_MAX_VERIFICATIONS} verifications per ${RATE_LIMIT_WINDOW_HOURS} hour${RATE_LIMIT_WINDOW_HOURS > 1 ? 's' : ''})`,
         score: 0
       };
     }
@@ -236,10 +371,13 @@ async function performAdditionalVerificationChecks({
     };
 
   } catch (error) {
-    console.error('Additional verification checks error:', error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Additional verification checks error:', error);
+    }
+
     return {
       passed: false,
-      reason: 'Error performing additional checks',
+      reason: 'Error performing additional security checks',
       score: 0
     };
   }
@@ -258,7 +396,7 @@ async function logVerificationAttempt({
   verificationId: string;
   actionType: string;
   tweetUrl: string;
-  result: any;
+  result: FinalVerification;
 }) {
   try {
     const { error } = await supabase
@@ -278,9 +416,13 @@ async function logVerificationAttempt({
       });
 
     if (error) {
-      console.warn('Verification logging failed (table may not exist):', error.message);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Verification logging failed (table may not exist):', error.message);
+      }
     }
   } catch (error) {
-    console.error('Error logging verification attempt:', error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Error logging verification attempt:', error);
+    }
   }
 }

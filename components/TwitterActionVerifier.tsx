@@ -93,8 +93,36 @@ export function TwitterActionVerifier({
     }
   };
 
-  const handleActionCompleted = () => {
-    setStep('verify');
+  const handleVerifyAction = () => {
+    // Open Twitter again to check if the action was completed
+    const tweetId = extractTweetId(tweetUrl);
+    const verifyUrl = `https://twitter.com/status/${tweetId}`;
+    
+    // Open Twitter to verify the action
+    const verifyPopup = window.open(
+      verifyUrl,
+      'twitter-verify',
+      'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' +
+      (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
+    );
+
+    if (verifyPopup) {
+      setPopupWindow(verifyPopup);
+      setStep('verify');
+
+      // Monitor popup for closure and automatically verify
+      const checkClosed = setInterval(() => {
+        if (verifyPopup.closed) {
+          clearInterval(checkClosed);
+          // Automatically start verification process
+          handleVerify();
+        }
+      }, 1000);
+    } else {
+      // Fallback: open in new tab and go to verify step
+      window.open(verifyUrl, '_blank');
+      setStep('verify');
+    }
   };
 
   const handleVerify = async () => {
@@ -340,11 +368,11 @@ export function TwitterActionVerifier({
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleActionCompleted}
+                  onClick={handleVerifyAction}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  I completed the action
+                  Verify Action
                 </Button>
               </div>
             </div>
@@ -353,22 +381,24 @@ export function TwitterActionVerifier({
           {step === 'verify' && (
             <div className="text-center space-y-4">
               <div className="relative">
-                <CheckCircle className="h-16 w-16 mx-auto text-green-500" />
+                <div className="animate-pulse">
+                  <CheckCircle className="h-16 w-16 mx-auto text-blue-500" />
+                </div>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-20 border-4 border-green-500/30 rounded-full animate-ping"></div>
+                  <div className="w-20 h-20 border-4 border-blue-500/30 rounded-full animate-ping"></div>
                 </div>
               </div>
 
               <div>
-                <p className="font-medium text-white text-lg">Ready to verify completion</p>
+                <p className="font-medium text-white text-lg">Verifying your action...</p>
                 <p className="text-sm text-slate-400 mt-2">
-                  Did you successfully complete the {actionType} action?
+                  We opened Twitter to check if you completed the {actionType} action
                 </p>
               </div>
 
-              <div className="p-4 bg-green-900/20 border border-green-700 rounded-lg">
-                <p className="text-sm text-green-300">
-                  ✅ Click verify to claim your USDC reward
+              <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
+                <p className="text-sm text-blue-300">
+                  🔍 Close the Twitter tab when you're done to complete verification
                 </p>
               </div>
 
@@ -411,59 +441,30 @@ export function TwitterActionVerifier({
                 </div>
               )}
 
+              {isVerifying && (
+                <div className="flex items-center justify-center gap-2 text-blue-400">
+                  <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Verifying action completion...</span>
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <Button
                   onClick={() => setStep('action')}
                   variant="outline"
                   className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                  disabled={isVerifying}
                 >
                   Try again
                 </Button>
-
-                {!verificationResult || !verificationResult.success ? (
-                  <>
-                    <Button
-                      onClick={handleVerify}
-                      disabled={isVerifying}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700"
-                    >
-                      {isVerifying ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          Auto-verifying...
-                        </div>
-                      ) : (
-                        <>
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Auto-verify
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      onClick={() => handleManualConfirmation(true)}
-                      disabled={isVerifying}
-                      className="flex-1 bg-green-600 hover:bg-green-700"
-                    >
-                      I completed it
-                    </Button>
-                  </>
-                ) : (
+                
+                {!isVerifying && (
                   <Button
                     onClick={() => handleManualConfirmation(true)}
-                    disabled={isVerifying}
                     className="flex-1 bg-green-600 hover:bg-green-700"
                   >
-                    {isVerifying ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Confirming...
-                      </div>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Confirm & earn
-                      </>
-                    )}
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    I completed it
                   </Button>
                 )}
               </div>
