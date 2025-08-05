@@ -171,6 +171,9 @@
                 }
                 }
 
+                // Mark helper as installed
+                localStorage.setItem('twitter_verifier_installed', 'true');
+                
                 // Run verification
                 if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', verifyAction);

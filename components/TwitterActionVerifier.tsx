@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Twitter, Sparkles, AlertTriangle, Clock } from 'lucide-react';
 import { browserVerifier, VerificationResult } from '@/lib/browser-verification';
+import { VerificationStatus } from './VerificationStatus';
 
 interface TwitterActionVerifierProps {
   isOpen: boolean;
@@ -326,6 +327,9 @@ export function TwitterActionVerifier({
         </DialogHeader>
 
         <div className="space-y-6">
+          {/* Verification Status - Always Visible */}
+          <VerificationStatus verificationId={verificationId} />
+          
           {step === 'ready' && (
             <div className="text-center space-y-4">
               <div className="p-6 bg-slate-800/50 border border-slate-700 rounded-lg">
