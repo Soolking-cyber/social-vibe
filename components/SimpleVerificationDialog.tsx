@@ -22,7 +22,7 @@ export function SimpleVerificationDialog({
   pricePerAction
 }: SimpleVerificationDialogProps) {
   const [isVerifying, setIsVerifying] = useState(false);
-  const [step, setStep] = useState<'verify' | 'verified' | 'failed'>('verify');
+  const [step, setStep] = useState<'ready' | 'completed' | 'verified' | 'failed'>('ready');
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
 
   const actionEmojis = {
@@ -58,7 +58,7 @@ export function SimpleVerificationDialog({
   };
 
   const handleClose = () => {
-    setStep('verify');
+    setStep('ready');
     setIsVerifying(false);
     setVerificationResult(null);
     onClose();
@@ -77,14 +77,14 @@ export function SimpleVerificationDialog({
         </DialogHeader>
 
         <div className="space-y-6">
-          {step === 'verify' && (
+          {step === 'ready' && (
             <div className="text-center space-y-4">
               <div className="text-6xl mb-4">{actionEmojis[actionType]}</div>
 
               <div>
-                <p className="font-medium text-white text-lg">Did you complete the {actionType}?</p>
+                <p className="font-medium text-white text-lg">Complete the {actionType} action</p>
                 <p className="text-sm text-slate-400 mt-2">
-                  Confirm that you successfully completed the Twitter action
+                  Click below to open Twitter and complete the action
                 </p>
               </div>
 
@@ -103,6 +103,43 @@ export function SimpleVerificationDialog({
                   Cancel
                 </Button>
                 <Button
+                  onClick={() => setStep('completed')}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                >
+                  <Twitter className="h-4 w-4 mr-2" />
+                  Complete {actionType}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === 'completed' && (
+            <div className="text-center space-y-4">
+              <div className="text-6xl mb-4">{actionEmojis[actionType]}</div>
+
+              <div>
+                <p className="font-medium text-white text-lg">Action Completed!</p>
+                <p className="text-sm text-slate-400 mt-2">
+                  Now verify your {actionType} to earn your USDC reward
+                </p>
+              </div>
+
+              <div className="p-4 bg-green-900/20 border border-green-700 rounded-lg">
+                <p className="text-sm text-green-300">
+                  💰 Click below to verify and earn ${parseFloat(pricePerAction).toFixed(3)} USDC
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleClose}
+                  variant="outline"
+                  className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                  disabled={isVerifying}
+                >
+                  Cancel
+                </Button>
+                <Button
                   onClick={() => handleVerify(true)}
                   disabled={isVerifying}
                   className="flex-1 bg-green-600 hover:bg-green-700"
@@ -115,7 +152,7 @@ export function SimpleVerificationDialog({
                   ) : (
                     <>
                       <CheckCircle className="h-4 w-4 mr-2" />
-                      Yes, verify & earn
+                      Verify {actionType}
                     </>
                   )}
                 </Button>
@@ -201,7 +238,7 @@ export function SimpleVerificationDialog({
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => setStep('verify')}
+                  onClick={() => setStep('ready')}
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
                 >
                   Try Again

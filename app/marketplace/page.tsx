@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserDashboard from '../../components/UserDashboard';
-import { SimpleVerificationDialog } from '../../components/SimpleVerificationDialog';
+import { TwitterActionVerifier } from '../../components/TwitterActionVerifier';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -505,14 +505,16 @@ export default function Marketplace() {
                 )}
             </div>
 
-            {/* Simple Verification Dialog */}
+            {/* Twitter Action Verifier */}
             {popupJob && (
-                <SimpleVerificationDialog
+                <TwitterActionVerifier
                     isOpen={showPopup}
                     onClose={handlePopupClose}
                     onVerified={handlePopupVerified}
-                    actionType={popupJob.actionType}
-                    pricePerAction={popupJob.pricePerAction}
+                    tweetUrl={popupJob.tweetUrl}
+                    actionType={popupJob.actionType as 'like' | 'retweet' | 'comment'}
+                    commentText={popupJob.commentText}
+                    jobId={popupJob.id.toString()}
                 />
             )}
         </div>

@@ -67,6 +67,9 @@ export function TwitterActionVerifier({
     setVerificationId(verifyId);
     setStartTime(Date.now());
 
+    // IMMEDIATELY change to completed state when button is clicked
+    setStep('completed');
+
     // Try popup first, fallback to new tab
     const popup = window.open(
       url,
@@ -78,17 +81,29 @@ export function TwitterActionVerifier({
     if (popup) {
       setPopupWindow(popup);
 
-      // Monitor popup for closure
+      // Set up cross-tab communication listener
+      const handleVerificationMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'twitter_action_completed' && 
+            event.data?.verificationId === verifyId &&
+            event.data?.verified === true) {
+          // Action was verified! Mark it in our system
+          browserVerifier.markActionAsVerified(verifyId);
+          window.removeEventListener('message', handleVerificationMessage);
+        }
+      };
+
+      window.addEventListener('message', handleVerificationMessage);
+
+      // Monitor popup for closure (optional cleanup)
       const checkClosed = setInterval(() => {
         if (popup.closed) {
           clearInterval(checkClosed);
-          setStep('completed'); // Move to completed state
+          window.removeEventListener('message', handleVerificationMessage);
         }
       }, 1000);
     } else {
       // Fallback: open in new tab (mobile/popup blocked)
       window.open(url, '_blank');
-      setStep('completed'); // Move to completed state
     }
   };
 
