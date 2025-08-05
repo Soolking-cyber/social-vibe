@@ -177,9 +177,13 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
     };
 
     const showInteractionFeedback = (type: string) => {
-      // Create temporary visual feedback
+      // Use React-friendly approach with a portal-like pattern
+      const feedbackId = `feedback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Create feedback element
       const feedback = document.createElement('div');
-      feedback.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform transition-all duration-300 ease-in-out';
+      feedback.id = feedbackId;
+      feedback.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300 ease-in-out';
       feedback.innerHTML = `
         <div class="flex items-center gap-2">
           <div class="w-4 h-4 bg-white rounded-full flex items-center justify-center">
@@ -189,48 +193,52 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
         </div>
       `;
       
-      // Add unique ID for safe removal
-      const feedbackId = `feedback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      feedback.id = feedbackId;
-      
-      try {
-        document.body.appendChild(feedback);
-        
-        // Animate in
-        const animateInTimeout = setTimeout(() => {
-          if (document.getElementById(feedbackId)) {
-            feedback.style.transform = 'translateX(0)';
+      // Safe DOM manipulation with error handling
+      const safeAppend = () => {
+        try {
+          // Check if document.body exists and is ready
+          if (document.body && document.readyState !== 'loading') {
+            document.body.appendChild(feedback);
+            return true;
           }
-        }, 100);
+          return false;
+        } catch (error) {
+          console.warn('Failed to append feedback element:', error);
+          return false;
+        }
+      };
+      
+      // Safe removal function
+      const safeRemove = () => {
+        try {
+          const element = document.getElementById(feedbackId);
+          if (element && element.parentNode && document.body.contains(element)) {
+            element.parentNode.removeChild(element);
+          }
+        } catch (error) {
+          // Silently handle removal errors
+        }
+      };
+      
+      // Try to append the element
+      if (safeAppend()) {
+        // Animate in after a brief delay
+        requestAnimationFrame(() => {
+          const element = document.getElementById(feedbackId);
+          if (element) {
+            element.style.transform = 'translateX(0)';
+          }
+        });
         
-        // Animate out and remove
-        const animateOutTimeout = setTimeout(() => {
+        // Schedule removal
+        setTimeout(() => {
           const element = document.getElementById(feedbackId);
           if (element) {
             element.style.transform = 'translateX(100%)';
-            
-            const removeTimeout = setTimeout(() => {
-              try {
-                const elementToRemove = document.getElementById(feedbackId);
-                if (elementToRemove && elementToRemove.parentNode) {
-                  elementToRemove.parentNode.removeChild(elementToRemove);
-                }
-              } catch (error) {
-                console.warn('Failed to remove feedback element:', error);
-              }
-            }, 300);
-            
-            // Store timeout for cleanup
-            feedback.setAttribute('data-remove-timeout', removeTimeout.toString());
+            // Remove after animation completes
+            setTimeout(safeRemove, 300);
           }
         }, 3000);
-        
-        // Store timeouts for potential cleanup
-        feedback.setAttribute('data-animate-in-timeout', animateInTimeout.toString());
-        feedback.setAttribute('data-animate-out-timeout', animateOutTimeout.toString());
-        
-      } catch (error) {
-        console.warn('Failed to show interaction feedback:', error);
       }
     };
 
@@ -246,22 +254,17 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
       try {
         const feedbackElements = document.querySelectorAll('[id^="feedback-"]');
         feedbackElements.forEach(element => {
-          // Clear any pending timeouts
-          const animateInTimeout = element.getAttribute('data-animate-in-timeout');
-          const animateOutTimeout = element.getAttribute('data-animate-out-timeout');
-          const removeTimeout = element.getAttribute('data-remove-timeout');
-          
-          if (animateInTimeout) clearTimeout(parseInt(animateInTimeout));
-          if (animateOutTimeout) clearTimeout(parseInt(animateOutTimeout));
-          if (removeTimeout) clearTimeout(parseInt(removeTimeout));
-          
-          // Remove element safely
-          if (element.parentNode) {
-            element.parentNode.removeChild(element);
+          try {
+            // Remove element safely with multiple checks
+            if (element && element.parentNode && document.body.contains(element)) {
+              element.parentNode.removeChild(element);
+            }
+          } catch (removeError) {
+            // Silently handle individual element removal errors
           }
         });
       } catch (error) {
-        console.warn('Error during feedback cleanup:', error);
+        // Silently handle cleanup errors to prevent app crashes
       }
       
       // Emit cleanup event
@@ -270,6 +273,27 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
       }
     };
   }, [tweetUrl, onInteraction]);
+
+  // Additional cleanup effect for component unmounting
+  useEffect(() => {
+    return () => {
+      // Clean up any pending feedback elements when component unmounts
+      try {
+        const feedbackElements = document.querySelectorAll('[id^="feedback-"]');
+        feedbackElements.forEach(element => {
+          try {
+            if (element && element.parentNode && document.body.contains(element)) {
+              element.parentNode.removeChild(element);
+            }
+          } catch (error) {
+            // Silently handle cleanup errors
+          }
+        });
+      } catch (error) {
+        // Silently handle cleanup errors
+      }
+    };
+  }, []);
 
   if (error) {
     return (
