@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Twitter, AlertTriangle } from 'lucide-react';
-import { SafeTwitterWidget } from './SafeTwitterWidget';
+import { SimpleTwitterEmbed } from './SimpleTwitterEmbed';
+import { SimpleErrorBoundary } from './SimpleErrorBoundary';
 import { widgetVerifier } from '@/lib/widget-verification';
 import { WidgetVerificationStatus } from './WidgetVerificationStatus';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -120,17 +121,19 @@ export function EmbeddedVerificationDialog({
 
               {/* Embedded Twitter Widget */}
               <div className="mb-6">
-                <SafeTwitterWidget
-                  tweetUrl={job.targetUrl}
-                  actionType={job.actionType}
-                  onInteraction={(type) => {
-                    console.log(`User interacted: ${type}`);
-                    setInteractionDetected(true);
-                  }}
-                  onVerificationReady={(vId) => {
-                    setVerificationId(vId);
-                  }}
-                />
+                <SimpleErrorBoundary>
+                  <SimpleTwitterEmbed
+                    tweetUrl={job.targetUrl}
+                    actionType={job.actionType}
+                    onInteraction={(type) => {
+                      console.log(`User interacted: ${type}`);
+                      setInteractionDetected(true);
+                    }}
+                    onVerificationReady={(vId) => {
+                      setVerificationId(vId);
+                    }}
+                  />
+                </SimpleErrorBoundary>
               </div>
 
               {/* Reward Info */}
