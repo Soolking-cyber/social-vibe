@@ -94,9 +94,14 @@ export function TwitterActionVerifier({
   };
 
   const handleVerifyAction = () => {
+    // Store current verification ID for the Twitter tab to access
+    if (verificationId) {
+      localStorage.setItem('current_verification_id', verificationId);
+    }
+
     // Open Twitter again to check if the action was completed
     const tweetId = extractTweetId(tweetUrl);
-    const verifyUrl = `https://twitter.com/status/${tweetId}`;
+    const verifyUrl = `https://twitter.com/status/${tweetId}?verification_id=${verificationId}`;
     
     // Open Twitter to verify the action
     const verifyPopup = window.open(
@@ -110,18 +115,42 @@ export function TwitterActionVerifier({
       setPopupWindow(verifyPopup);
       setStep('verify');
 
+      // Listen for verification messages from the Twitter tab
+      const handleVerificationMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'twitter_action_completed' && 
+            event.data?.verificationId === verificationId &&
+            event.data?.verified === true) {
+          // Action was verified! Mark it in our system
+          if (verificationId) {
+            browserVerifier.markActionAsVerified(verificationId);
+          }
+          window.removeEventListener('message', handleVerificationMessage);
+        }
+      };
+
+      window.addEventListener('message', handleVerificationMessage);
+
       // Monitor popup for closure and automatically verify
       const checkClosed = setInterval(() => {
         if (verifyPopup.closed) {
           clearInterval(checkClosed);
-          // Automatically start verification process
-          handleVerify();
+          window.removeEventListener('message', handleVerificationMessage);
+          
+          // Wait a moment for any final verification messages
+          setTimeout(() => {
+            handleVerify();
+          }, 1000);
         }
       }, 1000);
     } else {
       // Fallback: open in new tab and go to verify step
       window.open(verifyUrl, '_blank');
       setStep('verify');
+      
+      // For new tab, we'll need to rely on manual verification
+      setTimeout(() => {
+        handleVerify();
+      }, 5000); // Give user time to complete action
     }
   };
 
@@ -515,7 +544,7 @@ export function TwitterActionVerifier({
               <div>
                 <p className="font-medium text-red-400 text-lg">Verification Failed</p>
                 <p className="text-sm text-slate-400 mt-2">
-                  We couldn't verify that you completed the {actionType} action
+                  We couldn't verify that you completed the {actionType} action on Twitter
                 </p>
               </div>
 
@@ -528,18 +557,28 @@ export function TwitterActionVerifier({
                 </div>
               )}
 
+              <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
+                <p className="text-sm text-blue-300 mb-2">
+                  <strong>🔍 For Better Verification:</strong>
+                </p>
+                <p className="text-sm text-blue-200 mb-2">
+                  Install our verification helper to automatically detect completed actions
+                </p>
+                <Button
+                  onClick={() => window.open('/install-verification.html', '_blank')}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-sm py-2"
+                >
+                  Install Verification Helper
+                </Button>
+              </div>
+
               <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
                 <p className="text-sm text-slate-300 mb-2">
-                  <strong>To earn your reward:</strong>
+                  <strong>⚠️ Important:</strong>
                 </p>
                 <p className="text-sm text-slate-400">
-                  1. Make sure you actually completed the {actionType} action
-                </p>
-                <p className="text-sm text-slate-400">
-                  2. Spend at least 3 seconds on the Twitter page
-                </p>
-                <p className="text-sm text-slate-400">
-                  3. Return to this page after completing the action
+                  Only claim rewards for actions you actually completed. 
+                  False claims may result in account suspension.
                 </p>
               </div>
 

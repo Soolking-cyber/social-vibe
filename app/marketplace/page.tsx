@@ -208,8 +208,6 @@ export default function Marketplace() {
             const result = await response.json();
 
             if (response.ok) {
-                alert(`Success! You earned ${result.rewardAmount} USDC. ${result.message}`);
-
                 // Update the specific job to show as completed
                 setJobs(prevJobs =>
                     prevJobs.map(job =>
@@ -219,7 +217,7 @@ export default function Marketplace() {
                     )
                 );
 
-                // Close popup
+                // Close popup - the SimpleVerificationDialog already shows success
                 setShowPopup(false);
                 setPopupJob(null);
             } else {
@@ -227,7 +225,7 @@ export default function Marketplace() {
             }
         } catch (error) {
             console.error('Error verifying completion:', error);
-            alert('Failed to verify completion. Please try again.');
+            // Don't show alert here - let the verification dialog handle errors
         } finally {
             setVerifyingJobs(prev => {
                 const newSet = new Set(prev);

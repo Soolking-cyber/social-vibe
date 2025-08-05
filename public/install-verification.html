@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Install Twitter Verification Helper</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+            border: 1px solid #444;
+        }
+
+        .step {
+            margin: 20px 0;
+            padding: 15px;
+            background: #333;
+            border-radius: 5px;
+            border-left: 4px solid #1da1f2;
+        }
+
+        .code {
+            background: #000;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        .warning {
+            background: #ff6b35;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+
+        button {
+            background: #1da1f2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background: #0d8bd9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔍 Twitter Action Verification Helper</h1>
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> Due to browser security restrictions, we cannot automatically verify Twitter
+            actions.
+            You need to install a browser extension or user script to enable proper verification.
+        </div>
+
+        <div class="step">
+            <h3>Option 1: Install Tampermonkey (Recommended)</h3>
+            <p>1. Install <a href="https://tampermonkey.net/" target="_blank" style="color: #1da1f2;">Tampermonkey</a>
+                browser extension</p>
+            <p>2. Click the button below to install our verification script</p>
+            <button onclick="installUserScript()">Install Verification Script</button>
+        </div>
+
+        <div class="step">
+            <h3>Option 2: Manual Installation</h3>
+            <p>1. Copy the script below</p>
+            <p>2. Paste it into Tampermonkey or your preferred user script manager</p>
+
+            <div class="code" id="userScript">
+                // ==UserScript==
+                // @name Twitter Action Verifier
+                // @namespace http://tampermonkey.net/
+                // @version 1.0
+                // @description Verify Twitter actions for Social Vibe
+                // @author Social Vibe
+                // @match https://twitter.com/*
+                // @match https://x.com/*
+                // @grant none
+                // ==/UserScript==
+
+                (function() {
+                'use strict';
+
+                // Get verification ID from URL or localStorage
+                function getVerificationId() {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('verification_id') || localStorage.getItem('current_verification_id');
+                }
+
+                // Check if user has liked the current tweet
+                function checkLikeAction() {
+                const likeButtons = document.querySelectorAll('[data-testid="like"]');
+                for (const button of likeButtons) {
+                if (button.getAttribute('aria-pressed') === 'true') {
+                return true;
+                }
+                }
+                return false;
+                }
+
+                // Check if user has retweeted the current tweet
+                function checkRetweetAction() {
+                const retweetButtons = document.querySelectorAll('[data-testid="retweet"]');
+                for (const button of retweetButtons) {
+                if (button.getAttribute('aria-pressed') === 'true') {
+                return true;
+                }
+                }
+                return false;
+                }
+
+                // Main verification function
+                function verifyAction() {
+                const verificationId = getVerificationId();
+                if (!verificationId) return;
+
+                let verificationData;
+                try {
+                const stored = localStorage.getItem(`twitter_verification_${verificationId}`);
+                if (!stored) return;
+                verificationData = JSON.parse(stored);
+                } catch (error) {
+                return;
+                }
+
+                const { actionType } = verificationData;
+                let actionCompleted = false;
+
+                switch (actionType) {
+                case 'like':
+                actionCompleted = checkLikeAction();
+                break;
+                case 'retweet':
+                actionCompleted = checkRetweetAction();
+                break;
+                }
+
+                if (actionCompleted) {
+                localStorage.setItem(`twitter_action_verified_${verificationId}`, 'true');
+                localStorage.setItem(`twitter_action_verified_time_${verificationId}`, Date.now().toString());
+
+                if (window.opener) {
+                window.opener.postMessage({
+                type: 'twitter_action_completed',
+                verificationId: verificationId,
+                actionType: actionType,
+                verified: true
+                }, '*');
+                }
+                }
+                }
+
+                // Run verification
+                if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', verifyAction);
+                } else {
+                verifyAction();
+                }
+
+                setInterval(verifyAction, 2000);
+                document.addEventListener('click', () => setTimeout(verifyAction, 1000));
+                })();
+            </div>
+
+            <button onclick="copyScript()">Copy Script</button>
+        </div>
+
+        <div class="step">
+            <h3>Option 3: Manual Verification (Fallback)</h3>
+            <p>If you cannot install the script, you can still use manual verification, but rewards will be limited to
+                prevent abuse.</p>
+        </div>
+    </div>
+
+    <script>
+        function installUserScript() {
+            const script = document.getElementById('userScript').textContent;
+            const blob = new Blob([script], { type: 'text/javascript' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'twitter-verifier.user.js';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function copyScript() {
+            const script = document.getElementById('userScript').textContent;
+            navigator.clipboard.writeText(script).then(() => {
+                alert('Script copied to clipboard!');
+            });
+        }
+    </script>
+</body>
+
+</html>

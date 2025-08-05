@@ -120,47 +120,50 @@ export class BrowserTwitterVerifier {
       };
     }
 
+    // CRITICAL: Only accept verification if action was actually verified
+    const actionVerified = this.checkActionVerificationStatus(verificationId);
+    
+    if (actionVerified) {
+      return {
+        success: true,
+        confidence: 'high',
+        method: 'action_verified',
+        details: 'Action completion verified through Twitter page detection'
+      };
+    }
+
+    // If no verification proof found, FAIL the verification
+    return {
+      success: false,
+      confidence: 'low',
+      method: 'no_verification_proof',
+      details: 'No proof of action completion found. Action was not verified as completed.'
+    };
+  }
+
+  /**
+   * Check if the action was actually verified through cross-tab communication
+   */
+  private checkActionVerificationStatus(verificationId: string): boolean {
     try {
-      // Check multiple verification methods
-      const results = await Promise.all([
-        this.checkLocalStorageIndicators(verificationId),
-        this.checkSessionStorageIndicators(verificationId),
-        this.checkBrowserHistory(verificationData),
-        this.checkUserInteractionPatterns(verificationData)
-      ]);
-
-      // Combine results to determine overall success
-      const successfulResults = results.filter(r => r.success);
-
-      if (successfulResults.length >= 2) {
-        return {
-          success: true,
-          confidence: 'high',
-          method: 'multi_method_detection',
-          details: `Verified by ${successfulResults.length} methods: ${successfulResults.map(r => r.method).join(', ')}`
-        };
-      } else if (successfulResults.length === 1) {
-        return {
-          success: true,
-          confidence: 'medium',
-          method: successfulResults[0].method,
-          details: successfulResults[0].details
-        };
-      }
-
-      return {
-        success: false,
-        confidence: 'low',
-        method: 'insufficient_evidence',
-        details: 'Could not verify action completion through automated detection'
-      };
+      const verificationProof = localStorage.getItem(`twitter_action_verified_${verificationId}`);
+      return verificationProof === 'true';
     } catch (error) {
-      return {
-        success: false,
-        confidence: 'low',
-        method: 'verification_error',
-        details: 'Error occurred during verification process'
-      };
+      return false;
+    }
+  }
+
+  /**
+   * Mark action as verified (called from Twitter tab)
+   */
+  markActionAsVerified(verificationId: string): void {
+    try {
+      if (this.isLocalStorageAvailable()) {
+        localStorage.setItem(`twitter_action_verified_${verificationId}`, 'true');
+        localStorage.setItem(`twitter_action_verified_time_${verificationId}`, Date.now().toString());
+      }
+    } catch (error) {
+      console.warn('Failed to mark action as verified');
     }
   }
 
@@ -186,30 +189,37 @@ export class BrowserTwitterVerifier {
       };
     }
 
-    // Even with manual confirmation, try to find supporting evidence
-    const automaticResult = await this.checkVerification(verificationId);
-
-    // Store manual confirmation safely
-    try {
-      const stored = localStorage.getItem(`twitter_verification_${verificationId}`);
-      if (stored) {
-        const verificationData = JSON.parse(stored) as VerificationData;
-        verificationData.manualConfirmation = true;
-        verificationData.manualConfirmationTime = Date.now();
-        localStorage.setItem(`twitter_verification_${verificationId}`, JSON.stringify(verificationData));
+    // CRITICAL: Check if action was actually verified first
+    const actionVerified = this.checkActionVerificationStatus(verificationId);
+    
+    if (actionVerified) {
+      // Store manual confirmation safely
+      try {
+        const stored = localStorage.getItem(`twitter_verification_${verificationId}`);
+        if (stored) {
+          const verificationData = JSON.parse(stored) as VerificationData;
+          verificationData.manualConfirmation = true;
+          verificationData.manualConfirmationTime = Date.now();
+          localStorage.setItem(`twitter_verification_${verificationId}`, JSON.stringify(verificationData));
+        }
+      } catch (error) {
+        console.warn('Failed to store manual confirmation');
       }
-    } catch (error) {
-      // Continue even if we can't store the manual confirmation
-      console.warn('Failed to store manual confirmation');
+
+      return {
+        success: true,
+        confidence: 'high',
+        method: 'verified_with_confirmation',
+        details: 'Action was verified on Twitter and user confirmed completion'
+      };
     }
 
+    // If no verification proof found, REJECT manual confirmation
     return {
-      success: true,
-      confidence: automaticResult.success ? 'high' : 'medium',
-      method: automaticResult.success ? 'manual_with_evidence' : 'manual_confirmation',
-      details: automaticResult.success
-        ? `User confirmed + automatic verification: ${automaticResult.details}`
-        : 'User manually confirmed completion'
+      success: false,
+      confidence: 'high',
+      method: 'manual_rejected',
+      details: 'Manual confirmation rejected - no proof of action completion found on Twitter'
     };
   }
 
