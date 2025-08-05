@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Twitter, Sparkles, AlertTriangle } from 'lucide-react';
 import { simpleVerifier, SimpleVerificationResult } from '@/lib/simple-verification';
+import { browserVerifier } from '@/lib/browser-verification';
 import { VerificationStatus } from './VerificationStatus';
 
 interface TwitterActionVerifierProps {
