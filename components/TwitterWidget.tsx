@@ -188,22 +188,50 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
           <span>✓ ${type.charAt(0).toUpperCase() + type.slice(1)} detected!</span>
         </div>
       `;
-      document.body.appendChild(feedback);
       
-      // Animate in
-      setTimeout(() => {
-        feedback.style.transform = 'translateX(0)';
-      }, 100);
+      // Add unique ID for safe removal
+      const feedbackId = `feedback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      feedback.id = feedbackId;
       
-      // Animate out and remove
-      setTimeout(() => {
-        feedback.style.transform = 'translateX(100%)';
-        setTimeout(() => {
-          if (document.body.contains(feedback)) {
-            document.body.removeChild(feedback);
+      try {
+        document.body.appendChild(feedback);
+        
+        // Animate in
+        const animateInTimeout = setTimeout(() => {
+          if (document.getElementById(feedbackId)) {
+            feedback.style.transform = 'translateX(0)';
           }
-        }, 300);
-      }, 3000);
+        }, 100);
+        
+        // Animate out and remove
+        const animateOutTimeout = setTimeout(() => {
+          const element = document.getElementById(feedbackId);
+          if (element) {
+            element.style.transform = 'translateX(100%)';
+            
+            const removeTimeout = setTimeout(() => {
+              try {
+                const elementToRemove = document.getElementById(feedbackId);
+                if (elementToRemove && elementToRemove.parentNode) {
+                  elementToRemove.parentNode.removeChild(elementToRemove);
+                }
+              } catch (error) {
+                console.warn('Failed to remove feedback element:', error);
+              }
+            }, 300);
+            
+            // Store timeout for cleanup
+            feedback.setAttribute('data-remove-timeout', removeTimeout.toString());
+          }
+        }, 3000);
+        
+        // Store timeouts for potential cleanup
+        feedback.setAttribute('data-animate-in-timeout', animateInTimeout.toString());
+        feedback.setAttribute('data-animate-out-timeout', animateOutTimeout.toString());
+        
+      } catch (error) {
+        console.warn('Failed to show interaction feedback:', error);
+      }
     };
 
     initializeWidget();
@@ -212,6 +240,28 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
       // Cleanup
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
+      }
+      
+      // Clean up any remaining feedback elements
+      try {
+        const feedbackElements = document.querySelectorAll('[id^="feedback-"]');
+        feedbackElements.forEach(element => {
+          // Clear any pending timeouts
+          const animateInTimeout = element.getAttribute('data-animate-in-timeout');
+          const animateOutTimeout = element.getAttribute('data-animate-out-timeout');
+          const removeTimeout = element.getAttribute('data-remove-timeout');
+          
+          if (animateInTimeout) clearTimeout(parseInt(animateInTimeout));
+          if (animateOutTimeout) clearTimeout(parseInt(animateOutTimeout));
+          if (removeTimeout) clearTimeout(parseInt(removeTimeout));
+          
+          // Remove element safely
+          if (element.parentNode) {
+            element.parentNode.removeChild(element);
+          }
+        });
+      } catch (error) {
+        console.warn('Error during feedback cleanup:', error);
       }
       
       // Emit cleanup event
