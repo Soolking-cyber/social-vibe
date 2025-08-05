@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { widgetVerifier } from '@/lib/widget-verification';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface TwitterWidgetProps {
   tweetUrl: string;
@@ -16,7 +17,7 @@ declare global {
   }
 }
 
-export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificationReady }: TwitterWidgetProps) {
+function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerificationReady }: TwitterWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -340,5 +341,25 @@ export function TwitterWidget({ tweetUrl, actionType, onInteraction, onVerificat
         </div>
       )}
     </div>
+  );
+}
+
+// Export wrapped component with error boundary
+export function TwitterWidget(props: TwitterWidgetProps) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <div className="p-4 bg-yellow-900/20 border border-yellow-700 rounded-lg">
+          <p className="text-yellow-300 text-sm">
+            ⚠️ Twitter widget failed to load
+          </p>
+          <p className="text-yellow-400 text-xs mt-1">
+            Please refresh the page to try again.
+          </p>
+        </div>
+      }
+    >
+      <TwitterWidgetCore {...props} />
+    </ErrorBoundary>
   );
 }
