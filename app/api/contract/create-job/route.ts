@@ -209,13 +209,44 @@ export async function POST(request: NextRequest) {
         const pricePerActionFormatted = pricePerActionNum.toFixed(6);
         console.log(`Calling contract createJob with price: ${pricePerActionFormatted}`);
 
-        createJobTx = await jobsFactoryService.createJob(
-          tweet_url,
-          action_type,
-          pricePerActionFormatted,
-          max_actions,
-          comment_text || ""
-        );
+        // Estimate gas first to avoid transaction failures
+        const priceInWei = ethers.parseUnits(pricePerActionFormatted, 6);
+
+        try {
+          const gasEstimate = await jobsFactoryService.contract.createJob.estimateGas(
+            tweet_url,
+            action_type,
+            priceInWei,
+            max_actions,
+            comment_text || ""
+          );
+          console.log(`Estimated gas: ${gasEstimate.toString()}`);
+
+          // Add 20% buffer to gas estimate
+          const gasLimit = gasEstimate * BigInt(120) / BigInt(100);
+          console.log(`Gas limit with buffer: ${gasLimit.toString()}`);
+
+          // Call with explicit gas limit
+          createJobTx = await jobsFactoryService.contract.createJob(
+            tweet_url,
+            action_type,
+            priceInWei,
+            max_actions,
+            comment_text || "",
+            { gasLimit }
+          );
+        } catch (gasEstimateError) {
+          console.warn('Gas estimation failed, proceeding without explicit limit:', gasEstimateError);
+
+          // Fallback to original method without gas estimation
+          createJobTx = await jobsFactoryService.createJob(
+            tweet_url,
+            action_type,
+            pricePerActionFormatted,
+            max_actions,
+            comment_text || ""
+          );
+        }
 
         console.log(`Job creation transaction hash: ${createJobTx.hash}`);
         receipt = await createJobTx.wait();
