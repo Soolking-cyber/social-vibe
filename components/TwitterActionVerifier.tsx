@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Twitter, Sparkles, AlertTriangle } from 'lucide-react';
-import { browserVerifier, VerificationResult } from '@/lib/browser-verification';
+import { simpleVerifier, SimpleVerificationResult } from '@/lib/simple-verification';
 import { VerificationStatus } from './VerificationStatus';
 
 interface TwitterActionVerifierProps {
@@ -30,7 +30,7 @@ export function TwitterActionVerifier({
   const [isVerifying, setIsVerifying] = useState(false);
   const [popupWindow, setPopupWindow] = useState<Window | null>(null);
   const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+  const [verificationResult, setVerificationResult] = useState<SimpleVerificationResult | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
 
   const extractTweetId = (url: string): string => {
@@ -54,57 +54,19 @@ export function TwitterActionVerifier({
     }
   };
 
-  const handleCompleteAction = async () => {
+  const handleCompleteAction = () => {
     const url = getActionUrl();
 
-    // Start browser-based verification
-    const verifyId = await browserVerifier.startVerification(
-      actionType,
-      tweetUrl,
-      commentText
-    );
-
+    // Start simple verification (works on all platforms)
+    const verifyId = simpleVerifier.startVerification(actionType, tweetUrl);
     setVerificationId(verifyId);
     setStartTime(Date.now());
 
     // IMMEDIATELY change to completed state when button is clicked
     setStep('completed');
 
-    // Try popup first, fallback to new tab
-    const popup = window.open(
-      url,
-      'twitter-action',
-      'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' +
-      (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
-    );
-
-    if (popup) {
-      setPopupWindow(popup);
-
-      // Set up cross-tab communication listener
-      const handleVerificationMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'twitter_action_completed' && 
-            event.data?.verificationId === verifyId &&
-            event.data?.verified === true) {
-          // Action was verified! Mark it in our system
-          browserVerifier.markActionAsVerified(verifyId);
-          window.removeEventListener('message', handleVerificationMessage);
-        }
-      };
-
-      window.addEventListener('message', handleVerificationMessage);
-
-      // Monitor popup for closure (optional cleanup)
-      const checkClosed = setInterval(() => {
-        if (popup.closed) {
-          clearInterval(checkClosed);
-          window.removeEventListener('message', handleVerificationMessage);
-        }
-      }, 1000);
-    } else {
-      // Fallback: open in new tab (mobile/popup blocked)
-      window.open(url, '_blank');
-    }
+    // Open Twitter - works universally on all platforms
+    window.open(url, '_blank');
   };
 
   const handleVerifyAction = () => {

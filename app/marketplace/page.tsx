@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserDashboard from '../../components/UserDashboard';
-import { TwitterActionVerifier } from '../../components/TwitterActionVerifier';
+import { EmbeddedVerificationDialog } from '../../components/EmbeddedVerificationDialog';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,7 @@ export default function Marketplace() {
     const [verifyingJobs, setVerifyingJobs] = useState<Set<number>>(new Set());
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
     const [popupJob, setPopupJob] = useState<Job | null>(null);
-    const [showPopup, setShowPopup] = useState(false);
+
 
     // Helper function to normalize action types
     const normalizeActionType = (actionType: string): 'like' | 'retweet' | 'comment' => {
@@ -137,108 +137,9 @@ export default function Marketplace() {
         }
     };
 
-    const openTwitterAction = async (jobId: number) => {
-        try {
-            setCompletingJobs(prev => new Set(prev).add(jobId));
 
-            // Get job details first
-            const jobResponse = await fetch(`/api/jobs/${jobId}`);
-            if (!jobResponse.ok) {
-                alert('Failed to get job details');
-                return;
-            }
 
-            const job = await jobResponse.json();
-            // Normalize action type
-            const normalizedJob = {
-                ...job,
-                actionType: normalizeActionType(job.actionType)
-            };
 
-            // Open Twitter directly in popup/new tab
-            const url = getActionUrl(normalizedJob);
-            const popup = window.open(
-                url,
-                'twitter-action',
-                'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' + 
-                (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
-            );
-
-            // Set job for verification after popup closes
-            setPopupJob(normalizedJob);
-
-            // Monitor popup closure and show verification dialog
-            if (popup) {
-                const checkClosed = setInterval(() => {
-                    if (popup.closed) {
-                        clearInterval(checkClosed);
-                        setShowPopup(true);
-                    }
-                }, 1000);
-            } else {
-                // If popup blocked, show verification dialog immediately
-                setTimeout(() => setShowPopup(true), 1000);
-            }
-
-        } catch (error) {
-            console.error('Error getting job details:', error);
-            alert('Failed to get job details. Please try again.');
-        } finally {
-            setCompletingJobs(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(jobId);
-                return newSet;
-            });
-        }
-    };
-
-    const handlePopupVerified = async () => {
-        if (!popupJob) return;
-
-        try {
-            setVerifyingJobs(prev => new Set(prev).add(popupJob.id));
-
-            // Call the completion API
-            const response = await fetch('/api/jobs/complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId: popupJob.id.toString() })
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                // Update the specific job to show as completed
-                setJobs(prevJobs =>
-                    prevJobs.map(job =>
-                        job.id === popupJob.id
-                            ? { ...job, hasUserCompleted: true, canComplete: false }
-                            : job
-                    )
-                );
-
-                // Close popup - the SimpleVerificationDialog already shows success
-                setShowPopup(false);
-                setPopupJob(null);
-            } else {
-                alert(`Error: ${result.error}`);
-            }
-        } catch (error) {
-            console.error('Error verifying completion:', error);
-            // Don't show alert here - let the verification dialog handle errors
-        } finally {
-            setVerifyingJobs(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(popupJob.id);
-                return newSet;
-            });
-        }
-    };
-
-    const handlePopupClose = () => {
-        setShowPopup(false);
-        setPopupJob(null);
-    };
 
     // Function to get job status for sorting
     const getJobStatus = (job: Job) => {
@@ -455,7 +356,7 @@ export default function Marketplace() {
                                                 // Job not completed - show action buttons
                                                 <>
                                                     <Button
-                                                        onClick={() => openTwitterAction(job.id)}
+                                                        onClick={() => setPopupJob(job)}
                                                         disabled={completingJobs.has(job.id) || verifyingJobs.has(job.id)}
                                                         className="w-full bg-blue-600 hover:bg-blue-700"
                                                     >
@@ -472,9 +373,9 @@ export default function Marketplace() {
                                                         ) : (
                                                             <>
                                                                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                                 </svg>
-                                                                Complete {job.actionType} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
+                                                                🐦 Complete {job.actionType} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
                                                             </>
                                                         )}
                                                     </Button>
@@ -505,16 +406,28 @@ export default function Marketplace() {
                 )}
             </div>
 
-            {/* Twitter Action Verifier */}
+            {/* Embedded Verification Dialog */}
             {popupJob && (
-                <TwitterActionVerifier
-                    isOpen={showPopup}
-                    onClose={handlePopupClose}
-                    onVerified={handlePopupVerified}
-                    tweetUrl={popupJob.tweetUrl}
-                    actionType={popupJob.actionType as 'like' | 'retweet' | 'comment'}
-                    commentText={popupJob.commentText}
-                    jobId={popupJob.id.toString()}
+                <EmbeddedVerificationDialog
+                    isOpen={!!popupJob}
+                    onClose={() => setPopupJob(null)}
+                    onVerified={() => {
+                        // Update the specific job to show as completed
+                        setJobs(prevJobs =>
+                            prevJobs.map(job =>
+                                job.id === popupJob.id
+                                    ? { ...job, hasUserCompleted: true, canComplete: false }
+                                    : job
+                            )
+                        );
+                        setPopupJob(null);
+                    }}
+                    job={{
+                        id: popupJob.id.toString(),
+                        actionType: popupJob.actionType,
+                        targetUrl: popupJob.tweetUrl,
+                        reward: parseFloat(popupJob.pricePerAction).toFixed(3)
+                    }}
                 />
             )}
         </div>
