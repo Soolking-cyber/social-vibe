@@ -17,12 +17,13 @@ declare global {
   }
 }
 
-function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerificationReady }: TwitterWidgetProps) {
+function SafeTwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerificationReady }: TwitterWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [interactionDetected, setInteractionDetected] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   // Normalize action type (comment -> reply for Twitter API consistency)
   const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
@@ -31,6 +32,22 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
   const extractTweetId = (url: string): string | null => {
     const match = url.match(/status\/(\d+)/);
     return match ? match[1] : null;
+  };
+
+  // Show feedback using React state instead of DOM manipulation
+  const showInteractionFeedback = (type: string) => {
+    const message = `✓ ${type.charAt(0).toUpperCase() + type.slice(1)} detected!`;
+    setFeedbackMessage(message);
+    
+    // Emit global event
+    window.dispatchEvent(new CustomEvent('twitter-interaction-feedback', {
+      detail: { type, message }
+    }));
+    
+    // Clear feedback after 3 seconds
+    setTimeout(() => {
+      setFeedbackMessage(null);
+    }, 3000);
   };
 
   useEffect(() => {
@@ -60,7 +77,7 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
     const initializeWidget = async () => {
       try {
         await loadTwitterScript();
-
+        
         if (containerRef.current && window.twttr) {
           // Clear previous content
           containerRef.current.innerHTML = '';
@@ -74,15 +91,15 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
           });
 
           setIsLoaded(true);
-
+          
           // Start verification session
           const vId = widgetVerifier.startVerification(normalizedActionType, tweetUrl);
           setVerificationId(vId);
           onVerificationReady?.(vId);
-
+          
           // Emit global event
           window.dispatchEvent(new CustomEvent('widget-verification-start'));
-
+          
           // Set up interaction detection
           setupInteractionDetection(vId);
         }
@@ -104,7 +121,7 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
             if (widget) {
               // We can detect some interactions through iframe content changes
               // This is limited due to cross-origin restrictions, but we can detect some patterns
-              detectInteractionFromWidget();
+              console.log('Widget content changed - possible interaction');
             }
           }
         });
@@ -122,125 +139,48 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
         // Detect which type of interaction based on click target
         const target = event.target as HTMLElement;
         const clickedElement = target.closest('[data-testid], [role="button"], button');
-
+        
         if (clickedElement) {
           // Try to determine interaction type from element attributes
           const testId = clickedElement.getAttribute('data-testid');
           const ariaLabel = clickedElement.getAttribute('aria-label');
-
+          
           let detectedType: 'like' | 'retweet' | 'reply' | 'comment' | null = null;
-
+          
           if (testId?.includes('like') || ariaLabel?.toLowerCase().includes('like')) {
             detectedType = 'like';
           } else if (testId?.includes('retweet') || ariaLabel?.toLowerCase().includes('retweet')) {
             detectedType = 'retweet';
-          } else if (testId?.includes('reply') || ariaLabel?.toLowerCase().includes('reply') ||
-            testId?.includes('comment') || ariaLabel?.toLowerCase().includes('comment')) {
+          } else if (testId?.includes('reply') || ariaLabel?.toLowerCase().includes('reply') || 
+                     testId?.includes('comment') || ariaLabel?.toLowerCase().includes('comment')) {
             // Map both reply and comment to the original action type
             detectedType = actionType === 'comment' ? 'comment' : 'reply';
           }
-
+          
           if (detectedType) {
             // Extract tweet ID for history recording
             const tweetId = extractTweetId(tweetUrl);
-
+            
             // Use normalized type for internal tracking but original type for callback
             const trackingType = detectedType === 'comment' ? 'reply' : detectedType;
-
+            
             // Record the interaction
             widgetVerifier.recordInteraction(vId, trackingType);
             if (tweetId) {
               widgetVerifier.recordInteractionHistory(tweetId, trackingType);
             }
-
+            
             setInteractionDetected(true);
             onInteraction?.(detectedType);
-
+            
             // Emit global event
             window.dispatchEvent(new CustomEvent('widget-interaction-detected'));
-
-            // Show visual feedback
+            
+            // Show visual feedback using React state
             showInteractionFeedback(detectedType);
           }
         }
       });
-    };
-
-    const detectInteractionFromWidget = () => {
-      // Enhanced detection for iframe content changes
-      // Look for visual changes that indicate interaction completion
-      const iframe = containerRef.current?.querySelector('iframe');
-      if (iframe) {
-        // Monitor for changes in iframe content that suggest interaction
-        // This is limited by cross-origin restrictions but can catch some patterns
-        console.log('Widget content changed - possible interaction');
-      }
-    };
-
-    const showInteractionFeedback = (type: string) => {
-      // Use React-friendly approach with a portal-like pattern
-      const feedbackId = `feedback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      // Create feedback element
-      const feedback = document.createElement('div');
-      feedback.id = feedbackId;
-      feedback.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300 ease-in-out';
-      feedback.innerHTML = `
-        <div class="flex items-center gap-2">
-          <div class="w-4 h-4 bg-white rounded-full flex items-center justify-center">
-            <div class="w-2 h-2 bg-green-600 rounded-full"></div>
-          </div>
-          <span>✓ ${type.charAt(0).toUpperCase() + type.slice(1)} detected!</span>
-        </div>
-      `;
-
-      // Safe DOM manipulation with error handling
-      const safeAppend = () => {
-        try {
-          // Check if document.body exists and is ready
-          if (document.body && document.readyState !== 'loading') {
-            document.body.appendChild(feedback);
-            return true;
-          }
-          return false;
-        } catch (error) {
-          console.warn('Failed to append feedback element:', error);
-          return false;
-        }
-      };
-
-      // Safe removal function
-      const safeRemove = () => {
-        try {
-          const element = document.getElementById(feedbackId);
-          if (element && element.parentNode && document.body.contains(element)) {
-            element.parentNode.removeChild(element);
-          }
-        } catch (error) {
-          // Silently handle removal errors
-        }
-      };
-
-      // Try to append the element
-      if (safeAppend()) {
-        // Animate in after a brief delay
-        requestAnimationFrame(() => {
-          const element = document.getElementById(feedbackId);
-          if (element) {
-            element.style.transform = 'translateX(0)';
-          }
-        });
-
-        // Schedule removal
-        setTimeout(() => {
-          const element = document.getElementById(feedbackId);
-          if (element) {
-            element.style.transform = 'translateX(100%)';
-            // Remove after animation completes
-            setTimeout(safeRemove, 300);
-          }
-        }, 3000);
-      }
     };
 
     initializeWidget();
@@ -250,51 +190,13 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
-
-      // Clean up any remaining feedback elements
-      try {
-        const feedbackElements = document.querySelectorAll('[id^="feedback-"]');
-        feedbackElements.forEach(element => {
-          try {
-            // Remove element safely with multiple checks
-            if (element && element.parentNode && document.body.contains(element)) {
-              element.parentNode.removeChild(element);
-            }
-          } catch (removeError) {
-            // Silently handle individual element removal errors
-          }
-        });
-      } catch (error) {
-        // Silently handle cleanup errors to prevent app crashes
-      }
-
+      
       // Emit cleanup event
       if (verificationId) {
         window.dispatchEvent(new CustomEvent('widget-verification-end'));
       }
     };
   }, [tweetUrl, onInteraction]);
-
-  // Additional cleanup effect for component unmounting
-  useEffect(() => {
-    return () => {
-      // Clean up any pending feedback elements when component unmounts
-      try {
-        const feedbackElements = document.querySelectorAll('[id^="feedback-"]');
-        feedbackElements.forEach(element => {
-          try {
-            if (element && element.parentNode && document.body.contains(element)) {
-              element.parentNode.removeChild(element);
-            }
-          } catch (error) {
-            // Silently handle cleanup errors
-          }
-        });
-      } catch (error) {
-        // Silently handle cleanup errors
-      }
-    };
-  }, []);
 
   if (error) {
     return (
@@ -311,8 +213,20 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
 
   return (
     <div className="w-full">
-      <div
-        ref={containerRef}
+      {/* React-based feedback message */}
+      {feedbackMessage && (
+        <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-pulse">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center">
+              <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+            </div>
+            <span>{feedbackMessage}</span>
+          </div>
+        </div>
+      )}
+      
+      <div 
+        ref={containerRef} 
         className="flex justify-center min-h-[200px] bg-slate-800/50 rounded-lg p-4"
       >
         {!isLoaded && (
@@ -322,12 +236,13 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
           </div>
         )}
       </div>
-
+      
       {isLoaded && (
-        <div className={`mt-4 p-3 rounded-lg border ${interactionDetected
-            ? 'bg-green-900/20 border-green-700'
+        <div className={`mt-4 p-3 rounded-lg border ${
+          interactionDetected 
+            ? 'bg-green-900/20 border-green-700' 
             : 'bg-blue-900/20 border-blue-700'
-          }`}>
+        }`}>
           {interactionDetected ? (
             <p className="text-green-300 text-sm">
               ✅ <strong>Interaction detected!</strong> Your {actionType === 'comment' ? 'reply' : actionType} action was recorded.
@@ -344,7 +259,7 @@ function TwitterWidgetCore({ tweetUrl, actionType, onInteraction, onVerification
 }
 
 // Export wrapped component with error boundary
-export function TwitterWidget(props: TwitterWidgetProps) {
+export function SafeTwitterWidget(props: TwitterWidgetProps) {
   return (
     <ErrorBoundary
       fallback={
@@ -358,7 +273,7 @@ export function TwitterWidget(props: TwitterWidgetProps) {
         </div>
       }
     >
-      <TwitterWidgetCore {...props} />
+      <SafeTwitterWidgetCore {...props} />
     </ErrorBoundary>
   );
 }
