@@ -142,7 +142,16 @@ export function TwitterActionVerifier({
     try {
       // First try enhanced verification (includes time analysis)
       const result = await browserVerifier.enhancedVerification(verificationId);
-      setVerificationResult(result);
+      
+      // Convert VerificationResult to SimpleVerificationResult to match state type
+      const simpleResult: SimpleVerificationResult = {
+        success: result.success,
+        confidence: result.confidence,
+        method: result.method,
+        details: result.details || 'No additional details available'
+      };
+      
+      setVerificationResult(simpleResult);
 
       if (result.success && result.confidence === 'high') {
         // High confidence automatic verification
