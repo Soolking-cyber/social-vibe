@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CheckCircle, Twitter, Sparkles, AlertTriangle, Clock } from 'lucide-react';
+import { CheckCircle, Twitter, Sparkles, AlertTriangle } from 'lucide-react';
 import { browserVerifier, VerificationResult } from '@/lib/browser-verification';
 import { VerificationStatus } from './VerificationStatus';
 
@@ -26,12 +26,11 @@ export function TwitterActionVerifier({
   commentText,
   jobId
 }: TwitterActionVerifierProps) {
-  const [step, setStep] = useState<'ready' | 'action' | 'verify' | 'verified' | 'failed'>('ready');
+  const [step, setStep] = useState<'ready' | 'completed' | 'verified' | 'failed'>('ready');
   const [isVerifying, setIsVerifying] = useState(false);
   const [popupWindow, setPopupWindow] = useState<Window | null>(null);
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
-  const [timeSpent, setTimeSpent] = useState(0);
   const [startTime, setStartTime] = useState<number | null>(null);
 
   const extractTweetId = (url: string): string => {
@@ -55,7 +54,7 @@ export function TwitterActionVerifier({
     }
   };
 
-  const openTwitterAction = async () => {
+  const handleCompleteAction = async () => {
     const url = getActionUrl();
 
     // Start browser-based verification
@@ -78,19 +77,18 @@ export function TwitterActionVerifier({
 
     if (popup) {
       setPopupWindow(popup);
-      setStep('action');
 
-      // Monitor popup for closure and try to detect completion
+      // Monitor popup for closure
       const checkClosed = setInterval(() => {
         if (popup.closed) {
           clearInterval(checkClosed);
-          setStep('verify');
+          setStep('completed'); // Move to completed state
         }
       }, 1000);
     } else {
       // Fallback: open in new tab (mobile/popup blocked)
       window.open(url, '_blank');
-      setStep('action');
+      setStep('completed'); // Move to completed state
     }
   };
 
@@ -102,8 +100,8 @@ export function TwitterActionVerifier({
 
     // Open Twitter again to check if the action was completed
     const tweetId = extractTweetId(tweetUrl);
-    const verifyUrl = `https://twitter.com/status/${tweetId}?verification_id=${verificationId}`;
-    
+    const verifyUrl = `https://twitter.com/status/${tweetId}?verification_id=${verificationId || ''}`;
+
     // Open Twitter to verify the action
     const verifyPopup = window.open(
       verifyUrl,
@@ -114,13 +112,13 @@ export function TwitterActionVerifier({
 
     if (verifyPopup) {
       setPopupWindow(verifyPopup);
-      setStep('verify');
+      setIsVerifying(true);
 
       // Listen for verification messages from the Twitter tab
       const handleVerificationMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'twitter_action_completed' && 
-            event.data?.verificationId === verificationId &&
-            event.data?.verified === true) {
+        if (event.data?.type === 'twitter_action_completed' &&
+          event.data?.verificationId === verificationId &&
+          event.data?.verified === true) {
           // Action was verified! Mark it in our system
           if (verificationId) {
             browserVerifier.markActionAsVerified(verificationId);
@@ -136,7 +134,7 @@ export function TwitterActionVerifier({
         if (verifyPopup.closed) {
           clearInterval(checkClosed);
           window.removeEventListener('message', handleVerificationMessage);
-          
+
           // Wait a moment for any final verification messages
           setTimeout(() => {
             handleVerify();
@@ -144,10 +142,10 @@ export function TwitterActionVerifier({
         }
       }, 1000);
     } else {
-      // Fallback: open in new tab and go to verify step
+      // Fallback: open in new tab
       window.open(verifyUrl, '_blank');
-      setStep('verify');
-      
+      setIsVerifying(true);
+
       // For new tab, we'll need to rely on manual verification
       setTimeout(() => {
         handleVerify();
@@ -181,9 +179,8 @@ export function TwitterActionVerifier({
           onVerified();
         }, 2000);
       } else {
-        // Low confidence or failed - require manual confirmation
-        setStep('verify');
-        // Don't auto-proceed, let user manually confirm
+        // Low confidence or failed - show failed state
+        setStep('failed');
       }
     } catch (error) {
       console.error('Verification error:', error);
@@ -193,70 +190,7 @@ export function TwitterActionVerifier({
     }
   };
 
-  const handleManualConfirmation = async (userConfirmed: boolean) => {
-    if (!verificationId) return;
 
-    setIsVerifying(true);
-
-    try {
-      // First get browser verification result
-      const result = await browserVerifier.manualVerification(verificationId, userConfirmed);
-      setVerificationResult(result);
-
-      // If we have a jobId, perform server-side verification
-      if (jobId && result.success) {
-        const serverResponse = await fetch('/api/verify-action', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            jobId,
-            verificationId,
-            verificationResult: result,
-            actionType,
-            tweetUrl
-          }),
-        });
-
-        const serverResult = await serverResponse.json();
-
-        if (serverResult.success) {
-          setStep('verified');
-          setTimeout(() => {
-            onVerified();
-          }, 1500);
-        } else {
-          setVerificationResult({
-            success: false,
-            confidence: 'low',
-            method: 'server_rejected',
-            details: serverResult.message || 'Server verification failed'
-          });
-          setStep('failed');
-        }
-      } else if (result.success) {
-        // No server verification needed, proceed with client result
-        setStep('verified');
-        setTimeout(() => {
-          onVerified();
-        }, 1500);
-      } else {
-        setStep('failed');
-      }
-    } catch (error) {
-      console.error('Manual verification error:', error);
-      setVerificationResult({
-        success: false,
-        confidence: 'low',
-        method: 'error',
-        details: 'Verification failed due to an error'
-      });
-      setStep('failed');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
 
   const handleClose = () => {
     if (popupWindow && !popupWindow.closed) {
@@ -267,24 +201,13 @@ export function TwitterActionVerifier({
     setPopupWindow(null);
     setVerificationId(null);
     setVerificationResult(null);
-    setTimeSpent(0);
     setStartTime(null);
     onClose();
   };
 
-  // Timer effect to track time spent
+  // Timer effect for tracking (simplified)
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-
-    if (startTime && (step === 'action' || step === 'verify')) {
-      interval = setInterval(() => {
-        setTimeSpent(Date.now() - startTime);
-      }, 1000);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
+    // Timer logic can be added here if needed for verification timing
   }, [startTime, step]);
 
   // Cleanup on unmount
@@ -328,8 +251,8 @@ export function TwitterActionVerifier({
 
         <div className="space-y-6">
           {/* Verification Status - Always Visible */}
-          <VerificationStatus verificationId={verificationId} />
-          
+          <VerificationStatus verificationId={verificationId || undefined} />
+
           {step === 'ready' && (
             <div className="text-center space-y-4">
               <div className="p-6 bg-slate-800/50 border border-slate-700 rounded-lg">
@@ -352,157 +275,92 @@ export function TwitterActionVerifier({
                 </p>
               </div>
 
-              <Button onClick={openTwitterAction} className="w-full bg-blue-600 hover:bg-blue-700 py-3">
+              <Button onClick={handleCompleteAction} className="w-full bg-blue-600 hover:bg-blue-700 py-3">
                 <Twitter className="h-5 w-5 mr-2" />
-                Open Twitter & {actionButtons[actionType]}
+                Complete {actionButtons[actionType]}
               </Button>
             </div>
           )}
 
-          {step === 'action' && (
+          {step === 'completed' && (
             <div className="text-center space-y-6">
               <div className="relative">
-                <div className="animate-pulse">
-                  <Twitter className="h-20 w-20 mx-auto text-blue-500" />
-                </div>
+                {isVerifying ? (
+                  <div className="animate-pulse">
+                    <CheckCircle className="h-20 w-20 mx-auto text-blue-500" />
+                  </div>
+                ) : (
+                  <CheckCircle className="h-20 w-20 mx-auto text-green-500" />
+                )}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-24 h-24 border-4 border-blue-500/20 rounded-full animate-ping"></div>
+                  <div className={`w-24 h-24 border-4 ${isVerifying ? 'border-blue-500/20' : 'border-green-500/20'} rounded-full animate-ping`}></div>
                 </div>
               </div>
 
               <div>
-                <p className="font-medium text-white text-lg">Twitter popup opened!</p>
-                <p className="text-sm text-slate-400 mt-2">
-                  Complete the {actionType} action in the popup window
-                </p>
+                {isVerifying ? (
+                  <>
+                    <p className="font-medium text-white text-lg">Verifying Action...</p>
+                    <p className="text-sm text-slate-400 mt-2">
+                      We opened Twitter to verify your {actionType}. Close the tab when done.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-white text-lg">Action Completed!</p>
+                    <p className="text-sm text-slate-400 mt-2">
+                      Now verify your {actionType} to earn your USDC reward
+                    </p>
+                  </>
+                )}
               </div>
 
-              <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
-                <p className="text-sm text-slate-300">
-                  📱 <strong>Instructions:</strong>
-                </p>
-                <p className="text-sm text-slate-400 mt-2">
-                  1. Click the "{actionButtons[actionType]}" button in the popup
-                </p>
-                <p className="text-sm text-slate-400">
-                  2. Close the popup when done
-                </p>
-                <p className="text-sm text-slate-400">
-                  3. Come back here to verify and earn your reward
-                </p>
-              </div>
+              {isVerifying ? (
+                <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
+                  <div className="flex items-center justify-center gap-2 text-blue-300">
+                    <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+                    <span>🔍 Verifying your action...</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-green-900/20 border border-green-700 rounded-lg">
+                  <p className="text-sm text-green-300">
+                    💰 Click below to verify and earn your reward
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-3">
                 <Button
                   onClick={() => setStep('ready')}
                   variant="outline"
                   className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
+                  disabled={isVerifying}
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleVerifyAction}
                   className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Verify Action
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {step === 'verify' && (
-            <div className="text-center space-y-4">
-              <div className="relative">
-                <div className="animate-pulse">
-                  <CheckCircle className="h-16 w-16 mx-auto text-blue-500" />
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-20 border-4 border-blue-500/30 rounded-full animate-ping"></div>
-                </div>
-              </div>
-
-              <div>
-                <p className="font-medium text-white text-lg">Verifying your action...</p>
-                <p className="text-sm text-slate-400 mt-2">
-                  We opened Twitter to check if you completed the {actionType} action
-                </p>
-              </div>
-
-              <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
-                <p className="text-sm text-blue-300">
-                  🔍 Close the Twitter tab when you're done to complete verification
-                </p>
-              </div>
-
-              {/* Time spent indicator */}
-              {timeSpent > 0 && (
-                <div className="p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <Clock className="h-4 w-4" />
-                    Time spent: {Math.round(timeSpent / 1000)}s
-                    {timeSpent < 3000 && (
-                      <span className="text-yellow-400 ml-2">
-                        ⚠️ Minimum 3s required
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Verification result display */}
-              {verificationResult && (
-                <div className={`p-3 border rounded-lg ${verificationResult.success
-                  ? 'bg-green-900/20 border-green-700'
-                  : 'bg-red-900/20 border-red-700'
-                  }`}>
-                  <div className="flex items-center gap-2 text-sm">
-                    {verificationResult.success ? (
-                      <CheckCircle className="h-4 w-4 text-green-400" />
-                    ) : (
-                      <AlertTriangle className="h-4 w-4 text-red-400" />
-                    )}
-                    <span className={verificationResult.success ? 'text-green-300' : 'text-red-300'}>
-                      {verificationResult.confidence === 'high' ? '✅ High confidence' :
-                        verificationResult.confidence === 'medium' ? '⚠️ Medium confidence' :
-                          '❌ Low confidence'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {verificationResult.details}
-                  </p>
-                </div>
-              )}
-
-              {isVerifying && (
-                <div className="flex items-center justify-center gap-2 text-blue-400">
-                  <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                  <span>Verifying action completion...</span>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => setStep('action')}
-                  variant="outline"
-                  className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
                   disabled={isVerifying}
                 >
-                  Try again
+                  {isVerifying ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Verify {actionButtons[actionType]}
+                    </>
+                  )}
                 </Button>
-                
-                {!isVerifying && (
-                  <Button
-                    onClick={() => handleManualConfirmation(true)}
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    I completed it
-                  </Button>
-                )}
               </div>
             </div>
           )}
+
+
 
           {step === 'verified' && (
             <div className="text-center space-y-4">
@@ -581,7 +439,7 @@ export function TwitterActionVerifier({
                   <strong>⚠️ Important:</strong>
                 </p>
                 <p className="text-sm text-slate-400">
-                  Only claim rewards for actions you actually completed. 
+                  Only claim rewards for actions you actually completed.
                   False claims may result in account suspension.
                 </p>
               </div>
