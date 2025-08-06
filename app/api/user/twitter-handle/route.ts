@@ -81,9 +81,28 @@ export async function GET() {
       userData: user 
     });
 
+    // QUICK FIX: If no handle in database, try to extract from session name
+    let twitterHandle = user?.twitter_handle;
+    
+    if (!twitterHandle && session.user.name) {
+      // Try to extract Twitter handle from name (often stored as @username)
+      const nameHandle = session.user.name.replace('@', '');
+      if (nameHandle && nameHandle !== session.user.name) {
+        twitterHandle = nameHandle;
+        console.log('🔧 QUICK FIX: Using handle from session name:', twitterHandle);
+      }
+    }
+
+    // EMERGENCY FALLBACK: Use a test handle for development
+    if (!twitterHandle && process.env.NODE_ENV === 'development') {
+      twitterHandle = 'testuser'; // Replace with actual test handle
+      console.log('🚨 EMERGENCY FALLBACK: Using test handle for development');
+    }
+
     return NextResponse.json({
-      twitterHandle: user?.twitter_handle || null,
-      hasTwitterHandle: !!user?.twitter_handle
+      twitterHandle: twitterHandle || null,
+      hasTwitterHandle: !!twitterHandle,
+      source: user?.twitter_handle ? 'database' : 'fallback'
     });
 
   } catch (error) {

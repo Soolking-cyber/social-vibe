@@ -263,8 +263,27 @@ export function SimpleTwitterEmbed({
                 </span>
               </div>
               <p className="text-red-200 text-xs mt-1">
-                <strong>Verification blocked:</strong> Your Twitter handle should be automatically detected from your login. Please log out and log back in with Twitter, or contact support if this persists.
+                <strong>QUICK FIX:</strong> Enter your Twitter handle manually:
               </p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="@username"
+                  className="flex-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-white text-xs"
+                  onChange={(e) => {
+                    const handle = e.target.value.replace('@', '');
+                    if (handle) {
+                      setUserTwitterHandle(handle);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-2 py-1 bg-blue-600 text-white text-xs rounded"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           )}
         </div>
