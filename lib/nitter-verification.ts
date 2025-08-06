@@ -76,12 +76,15 @@ export class NitterVerifier {
   }
 
   /**
-   * Verify action completion by checking if counts increased
+   * Verify action completion by checking if counts increased - ROBUST VERSION
    */
   async verifyCompletion(verificationId: string): Promise<NitterVerificationResult> {
+    console.log('🔍 Starting Nitter verification for ID:', verificationId);
+    
     const session = this.verificationSessions.get(verificationId) || this.getSessionFromStorage(verificationId);
 
     if (!session) {
+      console.error('❌ Verification session not found:', verificationId);
       return {
         success: false,
         confidence: 'low',
@@ -90,21 +93,66 @@ export class NitterVerifier {
       };
     }
 
-    try {
-      // Get current counts
-      const currentCounts = await this.getUserCounts(session.userTwitterHandle);
+    console.log('📋 Session found:', {
+      actionType: session.actionType,
+      userHandle: session.userTwitterHandle,
+      initialCounts: {
+        likes: session.initialLikeCount,
+        retweets: session.initialRetweetCount,
+        tweets: session.initialTweetCount
+      }
+    });
 
+    try {
+      // Get current counts with retry logic
+      let currentCounts;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (retryCount < maxRetries) {
+        try {
+          console.log(`🔄 Fetching current counts (attempt ${retryCount + 1}/${maxRetries})...`);
+          currentCounts = await this.getUserCounts(session.userTwitterHandle);
+          break;
+        } catch (error) {
+          retryCount++;
+          console.warn(`⚠️ Attempt ${retryCount} failed:`, error);
+          if (retryCount < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+          }
+        }
+      }
+
+      if (!currentCounts) {
+        console.error('❌ Failed to get current counts after all retries');
+        return {
+          success: false,
+          confidence: 'low',
+          method: 'nitter_fetch_failed',
+          details: 'Failed to fetch current counts from Nitter after multiple attempts'
+        };
+      }
+
+      console.log('📊 Current counts:', currentCounts);
+
+      // Perform verification based on action type
+      let result: NitterVerificationResult;
+      
       switch (session.actionType) {
         case 'like':
-          return this.verifyLikeAction(session, currentCounts.likes);
+          result = this.verifyLikeAction(session, currentCounts.likes);
+          break;
 
         case 'retweet':
-          return this.verifyRetweetAction(session, currentCounts.retweets);
+          result = this.verifyRetweetAction(session, currentCounts.retweets);
+          break;
 
         case 'reply':
-          return this.verifyReplyAction(session, currentCounts.tweets);
+          result = this.verifyReplyAction(session, currentCounts.tweets);
+          break;
 
         default:
+          console.error('❌ Unsupported action type:', session.actionType);
           return {
             success: false,
             confidence: 'low',
@@ -112,13 +160,17 @@ export class NitterVerifier {
             details: `Action type ${session.actionType} is not supported`
           };
       }
+
+      console.log('✅ Verification result:', result);
+      return result;
+
     } catch (error) {
-      console.error('Nitter verification failed:', error);
+      console.error('❌ Nitter verification failed:', error);
       return {
         success: false,
         confidence: 'low',
         method: 'nitter_error',
-        details: 'Failed to verify action via Nitter'
+        details: `Failed to verify action via Nitter: ${error instanceof Error ? error.message : String(error)}`
       };
     }
   }
@@ -356,76 +408,112 @@ export class NitterVerifier {
     retweets: number;
   } | null {
     try {
-      // Nitter shows stats in order: "Tweets Following Followers Likes"
-      // Look for the profile stats section
-
+      console.log('🔍 Parsing Nitter HTML for counts...');
+      
       const counts = {
         tweets: 0,
         likes: 0,
         retweets: 0
       };
 
-      // Try to find the stats section with multiple patterns
-      const statsPatterns = [
-        // Pattern 1: Look for the profile stats container
-        /<div[^>]*class="[^"]*profile-stat[^"]*"[^>]*>(.*?)<\/div>/gi,
-        // Pattern 2: Look for stat items
-        /<span[^>]*class="[^"]*stat-num[^"]*"[^>]*>([0-9,]+)<\/span>\s*<span[^>]*class="[^"]*stat-header[^"]*"[^>]*>([^<]+)<\/span>/gi,
-        // Pattern 3: Simple pattern for numbers followed by labels
-        /([0-9,]+)\s*<[^>]*>\s*(Tweets|Following|Followers|Likes)/gi
-      ];
-
-      // Try each pattern
-      for (const pattern of statsPatterns) {
-        let match;
-        while ((match = pattern.exec(html)) !== null) {
-          if (match.length >= 3) {
-            const count = parseInt(match[1].replace(/,/g, ''), 10);
-            const label = match[2].toLowerCase().trim();
-
-            if (!isNaN(count)) {
-              if (label.includes('tweet')) {
-                counts.tweets = count;
-              } else if (label.includes('like')) {
-                counts.likes = count;
-              }
-              // Note: Nitter doesn't show retweet count separately, so we'll estimate
+      // ROBUST PARSING: Try multiple patterns in order of reliability
+      
+      // Pattern 1: Modern Nitter profile stats (most reliable)
+      const profileStatsPattern = /<div[^>]*class="[^"]*profile-statlist[^"]*"[^>]*>(.*?)<\/div>/gi;
+      const profileStatsMatch = profileStatsPattern.exec(html);
+      
+      if (profileStatsMatch) {
+        const statsSection = profileStatsMatch[1];
+        console.log('📊 Found profile stats section');
+        
+        // Extract individual stats
+        const statPattern = /<div[^>]*class="[^"]*profile-stat[^"]*"[^>]*>.*?<span[^>]*class="[^"]*profile-stat-num[^"]*"[^>]*>([0-9,]+)<\/span>.*?<span[^>]*class="[^"]*profile-stat-header[^"]*"[^>]*>([^<]+)<\/span>/gi;
+        
+        let statMatch;
+        while ((statMatch = statPattern.exec(statsSection)) !== null) {
+          const count = parseInt(statMatch[1].replace(/,/g, ''), 10);
+          const label = statMatch[2].toLowerCase().trim();
+          
+          console.log(`📈 Found stat: ${label} = ${count}`);
+          
+          if (!isNaN(count)) {
+            if (label.includes('tweet')) {
+              counts.tweets = count;
+            } else if (label.includes('like')) {
+              counts.likes = count;
             }
           }
         }
       }
 
-      // Fallback: Try to extract individual counts with specific patterns
+      // Pattern 2: Alternative stat parsing (fallback)
       if (counts.tweets === 0 || counts.likes === 0) {
-        // Try specific patterns for each count type
-        const tweetPattern = /Tweets[^0-9]*([0-9,]+)/i;
-        const likePattern = /Likes[^0-9]*([0-9,]+)/i;
+        console.log('🔄 Trying alternative parsing patterns...');
+        
+        // Look for any number followed by "Tweets" or "Likes"
+        const patterns = [
+          { regex: /([0-9,]+)\s*Tweets/i, type: 'tweets' },
+          { regex: /([0-9,]+)\s*Likes/i, type: 'likes' },
+          { regex: /Tweets[^0-9]*([0-9,]+)/i, type: 'tweets' },
+          { regex: /Likes[^0-9]*([0-9,]+)/i, type: 'likes' }
+        ];
 
-        const tweetMatch = html.match(tweetPattern);
-        if (tweetMatch) {
-          const tweetCount = parseInt(tweetMatch[1].replace(/,/g, ''), 10);
-          if (!isNaN(tweetCount)) counts.tweets = tweetCount;
-        }
-
-        const likeMatch = html.match(likePattern);
-        if (likeMatch) {
-          const likeCount = parseInt(likeMatch[1].replace(/,/g, ''), 10);
-          if (!isNaN(likeCount)) counts.likes = likeCount;
+        for (const pattern of patterns) {
+          const match = html.match(pattern.regex);
+          if (match) {
+            const count = parseInt(match[1].replace(/,/g, ''), 10);
+            if (!isNaN(count)) {
+              if (pattern.type === 'tweets' && counts.tweets === 0) {
+                counts.tweets = count;
+                console.log(`📈 Found tweets via fallback: ${count}`);
+              } else if (pattern.type === 'likes' && counts.likes === 0) {
+                counts.likes = count;
+                console.log(`📈 Found likes via fallback: ${count}`);
+              }
+            }
+          }
         }
       }
 
-      // For retweets, we'll need to check the user's recent tweets for retweet indicators
-      // This is more complex and might not be 100% accurate
+      // Pattern 3: Extract from any stat-like structure
+      if (counts.tweets === 0 || counts.likes === 0) {
+        console.log('🔄 Trying generic stat extraction...');
+        
+        const genericStatPattern = /<span[^>]*>([0-9,]+)<\/span>[^<]*<span[^>]*>(Tweets|Likes)/gi;
+        let genericMatch;
+        
+        while ((genericMatch = genericStatPattern.exec(html)) !== null) {
+          const count = parseInt(genericMatch[1].replace(/,/g, ''), 10);
+          const label = genericMatch[2].toLowerCase();
+          
+          if (!isNaN(count)) {
+            if (label === 'tweets' && counts.tweets === 0) {
+              counts.tweets = count;
+              console.log(`📈 Found tweets via generic: ${count}`);
+            } else if (label === 'likes' && counts.likes === 0) {
+              counts.likes = count;
+              console.log(`📈 Found likes via generic: ${count}`);
+            }
+          }
+        }
+      }
+
+      // For retweets, estimate from timeline
       counts.retweets = this.estimateRetweetCount(html);
 
-      // Validate that we got at least some counts
+      console.log('📊 Final parsed counts:', counts);
+
+      // Validate that we got meaningful data
       if (counts.tweets === 0 && counts.likes === 0) {
+        console.error('❌ No valid counts found in HTML');
+        // Log a sample of the HTML for debugging
+        console.log('HTML sample:', html.substring(0, 1000));
         return null;
       }
 
       return counts;
     } catch (error) {
-      console.error('Error parsing counts from HTML:', error);
+      console.error('❌ Error parsing counts from HTML:', error);
       return null;
     }
   }
