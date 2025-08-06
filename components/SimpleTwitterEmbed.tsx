@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Twitter, Eye } from 'lucide-react';
 import { widgetVerifier } from '@/lib/widget-verification';
@@ -256,11 +256,11 @@ export function SimpleTwitterEmbed({
               <div className="flex items-center gap-2 text-yellow-300">
                 <Twitter className="h-4 w-4" />
                 <span className="text-sm font-medium">
-                  ⚠️ No Twitter handle found
+                  ⚠️ Twitter handle not found
                 </span>
               </div>
               <p className="text-yellow-200 text-xs mt-1">
-                Please set up your Twitter handle in your profile for automatic verification
+                Your Twitter handle should be automatically detected from your login. Please try refreshing the page or contact support if this persists.
               </p>
             </div>
           )}
@@ -355,7 +355,7 @@ export function SimpleTwitterEmbed({
         {userTwitterHandle ? (
           <div>
             <p className="text-slate-400 text-xs">
-              <strong>Secure Verification:</strong> 
+              <strong>Secure Verification:</strong>
             </p>
             <ol className="text-slate-400 text-xs mt-1 space-y-1">
               <li>1. Click "Open Twitter" to capture your current {actionType} count</li>

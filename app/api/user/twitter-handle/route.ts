@@ -17,19 +17,54 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const userIdentifier = session.user.email || session.user.name;
-    
-    // Fetch Twitter handle from database (never from Twitter API)
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('twitter_handle, name, email')
-      .eq('name', userIdentifier)
-      .single();
+    // Try to find user by email first, then by name
+    let user = null;
+    let error = null;
+
+    if (session.user.email) {
+      const { data, error: emailError } = await supabase
+        .from('users')
+        .select('twitter_handle, name, email')
+        .eq('email', session.user.email)
+        .single();
+      
+      if (!emailError && data) {
+        user = data;
+      } else {
+        // Fallback to name-based lookup
+        const { data: nameData, error: nameError } = await supabase
+          .from('users')
+          .select('twitter_handle, name, email')
+          .eq('name', session.user.email || session.user.name)
+          .single();
+        
+        user = nameData;
+        error = nameError;
+      }
+    } else {
+      // No email, try name lookup
+      const { data, error: nameError } = await supabase
+        .from('users')
+        .select('twitter_handle, name, email')
+        .eq('name', session.user.name)
+        .single();
+      
+      user = data;
+      error = nameError;
+    }
 
     if (error) {
       console.error('Error fetching Twitter handle:', error);
+      console.log('Session user:', { email: session.user.email, name: session.user.name });
       return NextResponse.json({ error: 'Failed to fetch Twitter handle' }, { status: 500 });
     }
+
+    console.log('✅ Twitter handle lookup result:', { 
+      userEmail: session.user.email, 
+      userName: session.user.name,
+      foundHandle: user?.twitter_handle,
+      userData: user 
+    });
 
     return NextResponse.json({
       twitterHandle: user?.twitter_handle || null,
