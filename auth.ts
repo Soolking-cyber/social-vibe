@@ -44,13 +44,21 @@ export const authOptions: NextAuthOptions = {
       // Capture Twitter username from profile during login
       if (profile && account?.provider === 'twitter') {
         console.log('🔍 Twitter OAuth profile received:', {
-          profile: profile,
+          profile: JSON.stringify(profile, null, 2),
           profileData: (profile as any).data,
           profileUsername: (profile as any).username,
-          accountProvider: account.provider
+          accountProvider: account.provider,
+          user: JSON.stringify(user, null, 2),
+          account: JSON.stringify(account, null, 2)
         });
         
-        const twitterHandle = (profile as any).data?.username || (profile as any).username;
+        // Try multiple ways to extract Twitter handle
+        const twitterHandle = 
+          (profile as any).data?.username || 
+          (profile as any).username || 
+          (profile as any).screen_name ||
+          (user as any).username ||
+          (account as any).username;
         if (twitterHandle) {
           token.twitterHandle = twitterHandle;
           console.log('🔐 Captured Twitter handle during auth:', twitterHandle);

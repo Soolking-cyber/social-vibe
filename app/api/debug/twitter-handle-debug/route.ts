@@ -22,21 +22,30 @@ export async function GET() {
       image: session.user.image
     });
 
+    // Test Supabase connection
+    console.log('🔗 Testing Supabase connection...');
+    
     // Get all users from database for debugging
     const { data: allUsers, error: allUsersError } = await supabase
       .from('users')
       .select('*');
 
     console.log('📊 All users in database:', allUsers);
+    console.log('❌ All users error:', allUsersError);
 
-    // Try to find current user
-    const { data: currentUser, error: currentUserError } = await supabase
-      .from('users')
-      .select('*')
-      .or(`email.eq.${session.user.email},name.eq.${session.user.email || session.user.name}`)
-      .single();
+    // Try to find current user with multiple methods
+    const queries = [
+      { method: 'email', query: supabase.from('users').select('*').eq('email', session.user.email) },
+      { method: 'name', query: supabase.from('users').select('*').eq('name', session.user.name) },
+      { method: 'name_as_email', query: supabase.from('users').select('*').eq('name', session.user.email) }
+    ];
 
-    console.log('👤 Current user lookup:', { currentUser, currentUserError });
+    const results: Record<string, any> = {};
+    for (const { method, query } of queries) {
+      const { data, error } = await query.single();
+      results[method] = { data, error };
+      console.log(`🔍 Query ${method}:`, { data, error });
+    }
 
     return NextResponse.json({
       session: {
@@ -44,12 +53,11 @@ export async function GET() {
         name: session.user.name,
         image: session.user.image
       },
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       allUsers,
-      currentUser,
-      errors: {
-        allUsersError,
-        currentUserError
-      }
+      allUsersError,
+      queryResults: results
     });
 
   } catch (error) {
