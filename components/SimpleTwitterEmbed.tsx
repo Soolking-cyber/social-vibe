@@ -117,62 +117,48 @@ export function SimpleTwitterEmbed({
     // Normalize action type once at the beginning
     const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
 
-    // If user has a Twitter handle, REQUIRE Nitter verification - no manual fallback
-    if (userTwitterHandle && !nitterVerificationId) {
-      setNitterError('Please click "Open Twitter" first to initialize verification before confirming.');
+    // SECURITY: NO VERIFICATION WITHOUT TWITTER HANDLE - PERIOD!
+    if (!userTwitterHandle) {
+      setNitterError('🔒 Twitter handle required for verification. Please log out and log back in with Twitter to set up your handle.');
       return;
     }
 
-    // For users with Twitter handles, ONLY allow Nitter verification
-    if (userTwitterHandle && nitterVerificationId) {
-      try {
-        const nitterResult = await nitterVerifier.verifyCompletion(nitterVerificationId);
+    // SECURITY: NO VERIFICATION WITHOUT NITTER INITIALIZATION - PERIOD!
+    if (!nitterVerificationId) {
+      setNitterError('🔒 Please click "Open Twitter" first to initialize verification before confirming.');
+      return;
+    }
 
-        if (nitterResult.success) {
-          console.log('✓ Nitter verification successful:', nitterResult.details);
+    // ONLY ALLOW NITTER VERIFICATION - NO MANUAL BYPASS
+    try {
+      const nitterResult = await nitterVerifier.verifyCompletion(nitterVerificationId);
 
-          // Record in widget verifier as well
-          if (verificationId) {
-            widgetVerifier.recordInteraction(verificationId, normalizedActionType);
+      if (nitterResult.success) {
+        console.log('✓ Nitter verification successful:', nitterResult.details);
 
-            const tweetId = extractTweetId(tweetUrl);
-            if (tweetId) {
-              widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
-            }
+        // Record in widget verifier as well
+        if (verificationId) {
+          widgetVerifier.recordInteraction(verificationId, normalizedActionType);
+
+          const tweetId = extractTweetId(tweetUrl);
+          if (tweetId) {
+            widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
           }
-
-          setInteractionCompleted(true);
-          onInteraction?.(actionType);
-          return;
-        } else {
-          console.warn('Nitter verification failed:', nitterResult.details);
-          setNitterError(`Verification failed: ${nitterResult.details}. Please ensure you actually completed the ${actionType} action.`);
-          return;
         }
-      } catch (error) {
-        console.error('Nitter verification error:', error);
-        setNitterError('Verification error. Please try again or contact support.');
+
+        setInteractionCompleted(true);
+        onInteraction?.(actionType);
+        return;
+      } else {
+        console.warn('Nitter verification failed:', nitterResult.details);
+        setNitterError(`🔒 Verification failed: ${nitterResult.details}. You must actually complete the ${actionType} action on Twitter.`);
         return;
       }
-    }
-
-    // Only allow manual verification for users WITHOUT Twitter handles (legacy fallback)
-    if (!userTwitterHandle && verificationId) {
-      widgetVerifier.recordInteraction(verificationId, normalizedActionType);
-
-      const tweetId = extractTweetId(tweetUrl);
-      if (tweetId) {
-        widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
-      }
-
-      setInteractionCompleted(true);
-      onInteraction?.(actionType);
-      console.log(`✓ ${actionType} interaction confirmed (manual verification for user without Twitter handle)`);
+    } catch (error) {
+      console.error('Nitter verification error:', error);
+      setNitterError('🔒 Verification error. Please try again or contact support.');
       return;
     }
-
-    // If we get here, something is wrong
-    setNitterError('Unable to verify. Please ensure you have a Twitter handle set up and try again.');
   };
 
   // Extract tweet ID from URL
@@ -252,15 +238,15 @@ export function SimpleTwitterEmbed({
               </p>
             </div>
           ) : (
-            <div className="p-3 bg-yellow-900/20 border border-yellow-700 rounded-lg">
-              <div className="flex items-center gap-2 text-yellow-300">
+            <div className="p-3 bg-red-900/20 border border-red-700 rounded-lg">
+              <div className="flex items-center gap-2 text-red-300">
                 <Twitter className="h-4 w-4" />
                 <span className="text-sm font-medium">
-                  ⚠️ Twitter handle not found
+                  🔒 Twitter handle required for verification
                 </span>
               </div>
-              <p className="text-yellow-200 text-xs mt-1">
-                Your Twitter handle should be automatically detected from your login. Please try refreshing the page or contact support if this persists.
+              <p className="text-red-200 text-xs mt-1">
+                <strong>Verification blocked:</strong> Your Twitter handle should be automatically detected from your login. Please log out and log back in with Twitter, or contact support if this persists.
               </p>
             </div>
           )}
@@ -319,22 +305,22 @@ export function SimpleTwitterEmbed({
             <Button
               onClick={handleConfirmInteraction}
               variant="outline"
-              disabled={!!userTwitterHandle && !nitterVerificationId}
+              disabled={!userTwitterHandle || !nitterVerificationId}
               className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
-              {userTwitterHandle ? (
-                nitterVerificationId ? (
-                  <>
-                    <Eye className="h-4 w-4 mr-2" />
-                    Verify {actionLabels[actionType]} (Check Count)
-                  </>
-                ) : (
-                  <>
-                    🔒 Click "Open Twitter" first to verify
-                  </>
-                )
+              {!userTwitterHandle ? (
+                <>
+                  🔒 Twitter handle required for verification
+                </>
+              ) : !nitterVerificationId ? (
+                <>
+                  🔒 Click "Open Twitter" first to verify
+                </>
               ) : (
-                `✓ I completed the ${actionType}`
+                <>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Verify {actionLabels[actionType]} (Check Count)
+                </>
               )}
             </Button>
           </>
@@ -352,26 +338,20 @@ export function SimpleTwitterEmbed({
 
       {/* Instructions */}
       <div className="mt-4 p-3 bg-slate-800/30 border border-slate-700 rounded-lg">
-        {userTwitterHandle ? (
-          <div>
-            <p className="text-slate-400 text-xs">
-              <strong>Secure Verification:</strong>
-            </p>
-            <ol className="text-slate-400 text-xs mt-1 space-y-1">
-              <li>1. Click "Open Twitter" to capture your current {actionType} count</li>
-              <li>2. Complete the {actionType} action on Twitter</li>
-              <li>3. Return and click "Verify" to confirm the count increased</li>
-            </ol>
-            <p className="text-yellow-300 text-xs mt-2">
-              🔒 <strong>Anti-fraud:</strong> We verify your action by checking count changes on your profile
-            </p>
-          </div>
-        ) : (
+        <div>
           <p className="text-slate-400 text-xs">
-            <strong>Instructions:</strong> Click "Open Twitter" to complete the {actionType} action,
-            then click "I completed" to verify and earn your reward.
+            <strong>🔒 Mandatory Verification Process:</strong>
           </p>
-        )}
+          <ol className="text-slate-400 text-xs mt-1 space-y-1">
+            <li>1. Twitter handle must be detected from your login</li>
+            <li>2. Click "Open Twitter" to capture your current {actionType} count</li>
+            <li>3. Complete the {actionType} action on Twitter</li>
+            <li>4. Return and click "Verify" to confirm the count increased</li>
+          </ol>
+          <p className="text-red-300 text-xs mt-2">
+            🚫 <strong>No manual verification:</strong> All actions must be verified through count changes
+          </p>
+        </div>
       </div>
     </div>
   );
