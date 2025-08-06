@@ -28,7 +28,7 @@ export function SimpleTwitterEmbed({
   const [nitterError, setNitterError] = useState<string | null>(null);
   const [userTwitterHandle, setUserTwitterHandle] = useState<string>('');
   const [isLoadingHandle, setIsLoadingHandle] = useState(true);
-  
+
   const { data: session } = useSession();
 
   // Prevent hydration mismatch
@@ -79,7 +79,7 @@ export function SimpleTwitterEmbed({
   // Initialize verification session on mount - only once
   useEffect(() => {
     if (!mounted || verificationInitialized.current) return;
-    
+
     const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
     const vId = widgetVerifier.startVerification(normalizedActionType, tweetUrl);
     setVerificationId(vId);
@@ -117,8 +117,14 @@ export function SimpleTwitterEmbed({
     // Normalize action type once at the beginning
     const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
 
-    // For all actions with Nitter verification, verify the count
-    if (nitterVerificationId) {
+    // If user has a Twitter handle, REQUIRE Nitter verification - no manual fallback
+    if (userTwitterHandle && !nitterVerificationId) {
+      setNitterError('Please click "Open Twitter" first to initialize verification before confirming.');
+      return;
+    }
+
+    // For users with Twitter handles, ONLY allow Nitter verification
+    if (userTwitterHandle && nitterVerificationId) {
       try {
         const nitterResult = await nitterVerifier.verifyCompletion(nitterVerificationId);
 
@@ -140,30 +146,33 @@ export function SimpleTwitterEmbed({
           return;
         } else {
           console.warn('Nitter verification failed:', nitterResult.details);
-          setNitterError(`Verification failed: ${nitterResult.details}`);
+          setNitterError(`Verification failed: ${nitterResult.details}. Please ensure you actually completed the ${actionType} action.`);
           return;
         }
       } catch (error) {
         console.error('Nitter verification error:', error);
-        setNitterError('Verification error. Please try again.');
+        setNitterError('Verification error. Please try again or contact support.');
         return;
       }
     }
 
-    // Fallback to regular verification for non-like actions or when Nitter fails
-    if (verificationId) {
+    // Only allow manual verification for users WITHOUT Twitter handles (legacy fallback)
+    if (!userTwitterHandle && verificationId) {
       widgetVerifier.recordInteraction(verificationId, normalizedActionType);
 
       const tweetId = extractTweetId(tweetUrl);
       if (tweetId) {
         widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
       }
+
+      setInteractionCompleted(true);
+      onInteraction?.(actionType);
+      console.log(`✓ ${actionType} interaction confirmed (manual verification for user without Twitter handle)`);
+      return;
     }
 
-    setInteractionCompleted(true);
-    onInteraction?.(actionType);
-
-    console.log(`✓ ${actionType} interaction confirmed`);
+    // If we get here, something is wrong
+    setNitterError('Unable to verify. Please ensure you have a Twitter handle set up and try again.');
   };
 
   // Extract tweet ID from URL
@@ -310,13 +319,20 @@ export function SimpleTwitterEmbed({
             <Button
               onClick={handleConfirmInteraction}
               variant="outline"
-              className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
+              disabled={!!userTwitterHandle && !nitterVerificationId}
+              className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
-              {nitterVerificationId ? (
-                <>
-                  <Eye className="h-4 w-4 mr-2" />
-                  Verify {actionLabels[actionType]} (Check Count)
-                </>
+              {userTwitterHandle ? (
+                nitterVerificationId ? (
+                  <>
+                    <Eye className="h-4 w-4 mr-2" />
+                    Verify {actionLabels[actionType]} (Check Count)
+                  </>
+                ) : (
+                  <>
+                    🔒 Click "Open Twitter" first to verify
+                  </>
+                )
               ) : (
                 `✓ I completed the ${actionType}`
               )}
@@ -336,10 +352,26 @@ export function SimpleTwitterEmbed({
 
       {/* Instructions */}
       <div className="mt-4 p-3 bg-slate-800/30 border border-slate-700 rounded-lg">
-        <p className="text-slate-400 text-xs">
-          <strong>Instructions:</strong> Click "Open Twitter" to complete the {actionType} action,
-          then click "I completed" to verify and earn your reward.
-        </p>
+        {userTwitterHandle ? (
+          <div>
+            <p className="text-slate-400 text-xs">
+              <strong>Secure Verification:</strong> 
+            </p>
+            <ol className="text-slate-400 text-xs mt-1 space-y-1">
+              <li>1. Click "Open Twitter" to capture your current {actionType} count</li>
+              <li>2. Complete the {actionType} action on Twitter</li>
+              <li>3. Return and click "Verify" to confirm the count increased</li>
+            </ol>
+            <p className="text-yellow-300 text-xs mt-2">
+              🔒 <strong>Anti-fraud:</strong> We verify your action by checking count changes on your profile
+            </p>
+          </div>
+        ) : (
+          <p className="text-slate-400 text-xs">
+            <strong>Instructions:</strong> Click "Open Twitter" to complete the {actionType} action,
+            then click "I completed" to verify and earn your reward.
+          </p>
+        )}
       </div>
     </div>
   );
