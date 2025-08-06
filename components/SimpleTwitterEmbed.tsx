@@ -19,12 +19,18 @@ export function SimpleTwitterEmbed({
   onInteraction,
   onVerificationReady
 }: SimpleTwitterEmbedProps) {
+  const [mounted, setMounted] = useState(false);
   const [interactionCompleted, setInteractionCompleted] = useState(false);
   const [verificationId, setVerificationId] = useState<string | null>(null);
   const [nitterVerificationId, setNitterVerificationId] = useState<string | null>(null);
   const [isInitializingNitter, setIsInitializingNitter] = useState(false);
   const [nitterError, setNitterError] = useState<string | null>(null);
   const [userTwitterHandle, setUserTwitterHandle] = useState<string>('');
+
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Initialize verification session on mount
   useEffect(() => {
@@ -36,7 +42,7 @@ export function SimpleTwitterEmbed({
 
   const handleOpenTwitter = async () => {
     // Initialize Nitter verification for all action types if handle is provided
-    if (userTwitterHandle.trim()) {
+    if (userTwitterHandle.trim() && typeof window !== 'undefined') {
       setIsInitializingNitter(true);
       setNitterError(null);
 
@@ -54,8 +60,10 @@ export function SimpleTwitterEmbed({
       }
     }
 
-    // Open Twitter in a new tab
-    window.open(tweetUrl, '_blank', 'noopener,noreferrer');
+    // Open Twitter in a new tab (client-side only)
+    if (typeof window !== 'undefined') {
+      window.open(tweetUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const handleConfirmInteraction = async () => {
@@ -130,6 +138,20 @@ export function SimpleTwitterEmbed({
     reply: 'Reply',
     comment: 'Comment'
   };
+
+  // Prevent hydration mismatch by not rendering until mounted
+  if (!mounted) {
+    return (
+      <div className="w-full max-w-md mx-auto">
+        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 mb-4">
+          <div className="animate-pulse">
+            <div className="h-4 bg-slate-700 rounded w-3/4 mb-2"></div>
+            <div className="h-4 bg-slate-700 rounded w-1/2"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-md mx-auto">
