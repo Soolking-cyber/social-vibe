@@ -43,6 +43,13 @@ export const authOptions: NextAuthOptions = {
       }
       // Capture Twitter username from profile during login
       if (profile && account?.provider === 'twitter') {
+        console.log('🔍 Twitter OAuth profile received:', {
+          profile: profile,
+          profileData: (profile as any).data,
+          profileUsername: (profile as any).username,
+          accountProvider: account.provider
+        });
+        
         const twitterHandle = (profile as any).data?.username || (profile as any).username;
         if (twitterHandle) {
           token.twitterHandle = twitterHandle;
@@ -57,8 +64,10 @@ export const authOptions: NextAuthOptions = {
             );
             
             const userIdentifier = user?.email || user?.name;
+            console.log('💾 Storing Twitter handle for user:', userIdentifier);
+            
             if (userIdentifier) {
-              await supabase
+              const result = await supabase
                 .from('users')
                 .upsert({
                   name: userIdentifier,
@@ -69,11 +78,15 @@ export const authOptions: NextAuthOptions = {
                   onConflict: 'name',
                   ignoreDuplicates: false
                 });
+              
+              console.log('💾 Database upsert result:', result);
               console.log('✅ Twitter handle stored securely in database');
             }
           } catch (error) {
             console.error('❌ Failed to store Twitter handle:', error);
           }
+        } else {
+          console.warn('⚠️ No Twitter handle found in profile');
         }
       }
       return token

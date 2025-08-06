@@ -13,7 +13,15 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
+    console.log('🔍 Twitter handle API called with session:', {
+      hasSession: !!session,
+      userEmail: session?.user?.email,
+      userName: session?.user?.name,
+      userImage: session?.user?.image
+    });
+
     if (!session?.user) {
+      console.error('❌ No session found');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -22,33 +30,40 @@ export async function GET() {
     let error = null;
 
     if (session.user.email) {
+      console.log('🔍 Trying email lookup for:', session.user.email);
       const { data, error: emailError } = await supabase
         .from('users')
         .select('twitter_handle, name, email')
         .eq('email', session.user.email)
         .single();
       
+      console.log('📊 Email lookup result:', { data, error: emailError });
+      
       if (!emailError && data) {
         user = data;
       } else {
         // Fallback to name-based lookup
+        console.log('🔄 Trying name lookup for:', session.user.email || session.user.name);
         const { data: nameData, error: nameError } = await supabase
           .from('users')
           .select('twitter_handle, name, email')
           .eq('name', session.user.email || session.user.name)
           .single();
         
+        console.log('📊 Name lookup result:', { data: nameData, error: nameError });
         user = nameData;
         error = nameError;
       }
     } else {
       // No email, try name lookup
+      console.log('🔄 No email, trying name lookup for:', session.user.name);
       const { data, error: nameError } = await supabase
         .from('users')
         .select('twitter_handle, name, email')
         .eq('name', session.user.name)
         .single();
       
+      console.log('📊 Name-only lookup result:', { data, error: nameError });
       user = data;
       error = nameError;
     }
