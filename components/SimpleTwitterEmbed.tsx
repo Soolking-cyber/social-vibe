@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Twitter, Eye } from 'lucide-react';
-import { widgetVerifier } from '@/lib/widget-verification';
 import { nitterVerifier } from '@/lib/nitter-verification';
 import { useSession } from 'next-auth/react';
 
@@ -11,18 +10,16 @@ interface SimpleTwitterEmbedProps {
   tweetUrl: string;
   actionType: 'like' | 'retweet' | 'reply' | 'comment';
   onInteraction?: (type: 'like' | 'retweet' | 'reply' | 'comment') => void;
-  onVerificationReady?: (verificationId: string) => void;
 }
 
 export function SimpleTwitterEmbed({
   tweetUrl,
   actionType,
-  onInteraction,
-  onVerificationReady
+  onInteraction
 }: SimpleTwitterEmbedProps) {
   const [mounted, setMounted] = useState(false);
   const [interactionCompleted, setInteractionCompleted] = useState(false);
-  const [verificationId, setVerificationId] = useState<string | null>(null);
+
   const [nitterVerificationId, setNitterVerificationId] = useState<string | null>(null);
   const [isInitializingNitter, setIsInitializingNitter] = useState(false);
   const [nitterError, setNitterError] = useState<string | null>(null);
@@ -66,28 +63,12 @@ export function SimpleTwitterEmbed({
     }
   }, [mounted, session]);
 
-  // Use ref to track if verification was already initialized
-  const verificationInitialized = useRef(false);
-
   // Reset verification when key props change
   useEffect(() => {
-    verificationInitialized.current = false;
-    setVerificationId(null);
     setInteractionCompleted(false);
     setNitterVerificationId(null);
     setNitterError(null);
   }, [tweetUrl, actionType]);
-
-  // Initialize verification session on mount - only once
-  useEffect(() => {
-    if (!mounted || verificationInitialized.current) return;
-
-    const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
-    const vId = widgetVerifier.startVerification(normalizedActionType, tweetUrl);
-    setVerificationId(vId);
-    onVerificationReady?.(vId);
-    verificationInitialized.current = true;
-  }, [mounted, tweetUrl, actionType]); // Removed onVerificationReady from deps
 
   // Timer for countdown
   useEffect(() => {
@@ -179,15 +160,7 @@ export function SimpleTwitterEmbed({
       if (nitterResult.success) {
         console.log('✅ VERIFICATION SUCCESS:', nitterResult.details);
 
-        // Record in widget verifier as well
-        if (verificationId) {
-          widgetVerifier.recordInteraction(verificationId, normalizedActionType);
-
-          const tweetId = extractTweetId(tweetUrl);
-          if (tweetId) {
-            widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
-          }
-        }
+        // Nitter verification successful - no additional recording needed
 
         setNitterError(null);
         setInteractionCompleted(true);

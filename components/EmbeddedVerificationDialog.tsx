@@ -6,8 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { CheckCircle, Twitter, AlertTriangle } from 'lucide-react';
 import { SimpleTwitterEmbed } from './SimpleTwitterEmbed';
 import { SimpleErrorBoundary } from './SimpleErrorBoundary';
-import { widgetVerifier } from '@/lib/widget-verification';
-import { WidgetVerificationStatus } from './WidgetVerificationStatus';
+
 import { ErrorBoundary } from './ErrorBoundary';
 
 interface EmbeddedVerificationDialogProps {
@@ -29,7 +28,7 @@ export function EmbeddedVerificationDialog({
   job
 }: EmbeddedVerificationDialogProps) {
   const [isVerifying, setIsVerifying] = useState(false);
-  const [verificationId, setVerificationId] = useState<string | null>(null);
+
   const [interactionDetected, setInteractionDetected] = useState(false);
   const [verificationResult, setVerificationResult] = useState<string | null>(null);
   const [step, setStep] = useState<'interact' | 'verified' | 'failed'>('interact');
@@ -40,50 +39,44 @@ export function EmbeddedVerificationDialog({
     comment: '💬'
   };
 
-  const handleVerify = async () => {
-    if (!verificationId) return;
+  const handleJobCompletion = async () => {
+    if (!interactionDetected) {
+      setVerificationResult('Please complete the Twitter action first.');
+      setStep('failed');
+      return;
+    }
 
     setIsVerifying(true);
     setVerificationResult(null);
 
     try {
-      // Use widget verification system
-      const result = await widgetVerifier.verifyCompletion(
-        verificationId,
-        true // User confirmed they completed the action
-      );
+      // Call the jobs completion API directly
+      // The verification was already handled by SimpleTwitterEmbed
+      const response = await fetch('/api/jobs/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: job.id
+        })
+      });
 
-      if (result.success) {
-        // Call the existing jobs completion API
-        const response = await fetch('/api/jobs/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jobId: job.id
-          })
-        });
+      if (response.ok) {
+        const data = await response.json();
+        setVerificationResult(`You earned ${data.rewardAmount} USDC!`);
+        setStep('verified');
 
-        if (response.ok) {
-          const data = await response.json();
-          setVerificationResult(`You earned ${data.rewardAmount} USDC!`);
-          setStep('verified');
-
-          // Close dialog after success
-          setTimeout(() => {
-            onVerified();
-            onClose();
-          }, 3000);
-        } else {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to process verification');
-        }
+        // Close dialog after success
+        setTimeout(() => {
+          onVerified();
+          onClose();
+        }, 3000);
       } else {
-        setVerificationResult(`Verification failed: ${result.details}`);
-        setStep('failed');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process verification');
       }
     } catch (error) {
-      console.error('Verification error:', error);
-      setVerificationResult('Verification failed. Please try again.');
+      console.error('Job completion error:', error);
+      setVerificationResult('Failed to complete job. Please try again.');
       setStep('failed');
     } finally {
       setIsVerifying(false);
@@ -95,7 +88,7 @@ export function EmbeddedVerificationDialog({
     setIsVerifying(false);
     setVerificationResult(null);
     setInteractionDetected(false);
-    setVerificationId(null);
+
     onClose();
   };
 
@@ -112,13 +105,6 @@ export function EmbeddedVerificationDialog({
         <div className="space-y-6">
           {step === 'interact' && (
             <>
-              {/* Verification Status */}
-              <WidgetVerificationStatus
-                verificationId={verificationId}
-                interactionDetected={interactionDetected}
-                className="mb-4"
-              />
-
               {/* Embedded Twitter Widget */}
               <div className="mb-6">
                 <SimpleErrorBoundary>
@@ -128,9 +114,8 @@ export function EmbeddedVerificationDialog({
                     onInteraction={(type) => {
                       console.log(`User interacted: ${type}`);
                       setInteractionDetected(true);
-                    }}
-                    onVerificationReady={(vId) => {
-                      setVerificationId(vId);
+                      // The SimpleTwitterEmbed now handles its own Nitter verification
+                      // We'll get the verification ID through a different mechanism
                     }}
                   />
                 </SimpleErrorBoundary>
@@ -154,25 +139,21 @@ export function EmbeddedVerificationDialog({
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleVerify}
-                  disabled={isVerifying || !verificationId}
-                  className={`flex-1 font-medium transition-colors ${interactionDetected
-                    ? 'bg-green-600 hover:bg-green-700 disabled:bg-green-800'
-                    : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800'
-                    } disabled:opacity-50 text-white`}
+                  onClick={() => {
+                    // The verification is now handled entirely by SimpleTwitterEmbed
+                    // This dialog just needs to handle the job completion
+                    handleJobCompletion();
+                  }}
+                  disabled={!interactionDetected}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 text-white font-medium"
                 >
-                  {isVerifying ? (
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Verifying...
-                    </div>
-                  ) : interactionDetected ? (
+                  {interactionDetected ? (
                     <>
                       <CheckCircle className="h-4 w-4 mr-2" />
-                      🎉 Verify & Earn USDC
+                      🎉 Complete Job & Earn USDC
                     </>
                   ) : (
-                    `✓ I completed the ${job.actionType}`
+                    `Complete the ${job.actionType} action first`
                   )}
                 </Button>
               </div>
