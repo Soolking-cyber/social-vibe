@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Twitter, Eye } from 'lucide-react';
 import { widgetVerifier } from '@/lib/widget-verification';
@@ -32,13 +32,28 @@ export function SimpleTwitterEmbed({
     setMounted(true);
   }, []);
 
-  // Initialize verification session on mount
+  // Use ref to track if verification was already initialized
+  const verificationInitialized = useRef(false);
+
+  // Reset verification when key props change
   useEffect(() => {
+    verificationInitialized.current = false;
+    setVerificationId(null);
+    setInteractionCompleted(false);
+    setNitterVerificationId(null);
+    setNitterError(null);
+  }, [tweetUrl, actionType]);
+
+  // Initialize verification session on mount - only once
+  useEffect(() => {
+    if (!mounted || verificationInitialized.current) return;
+    
     const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
     const vId = widgetVerifier.startVerification(normalizedActionType, tweetUrl);
     setVerificationId(vId);
     onVerificationReady?.(vId);
-  }, [tweetUrl, actionType, onVerificationReady]);
+    verificationInitialized.current = true;
+  }, [mounted, tweetUrl, actionType]); // Removed onVerificationReady from deps
 
   const handleOpenTwitter = async () => {
     // Initialize Nitter verification for all action types if handle is provided
