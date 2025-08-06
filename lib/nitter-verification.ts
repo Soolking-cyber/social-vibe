@@ -32,11 +32,11 @@ export class NitterVerifier {
     actionType: 'like' | 'retweet' | 'reply'
   ): Promise<string> {
     const verificationId = `nitter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     try {
       // Get initial counts from user's profile
       const initialCounts = await this.getUserCounts(userTwitterHandle);
-      
+
       const session: NitterVerificationSession = {
         id: verificationId,
         tweetUrl,
@@ -50,7 +50,7 @@ export class NitterVerifier {
       };
 
       this.verificationSessions.set(verificationId, session);
-      
+
       // Store in localStorage as backup
       try {
         localStorage.setItem(`nitter_verification_${verificationId}`, JSON.stringify(session));
@@ -80,7 +80,7 @@ export class NitterVerifier {
    */
   async verifyCompletion(verificationId: string): Promise<NitterVerificationResult> {
     const session = this.verificationSessions.get(verificationId) || this.getSessionFromStorage(verificationId);
-    
+
     if (!session) {
       return {
         success: false,
@@ -93,17 +93,17 @@ export class NitterVerifier {
     try {
       // Get current counts
       const currentCounts = await this.getUserCounts(session.userTwitterHandle);
-      
+
       switch (session.actionType) {
         case 'like':
           return this.verifyLikeAction(session, currentCounts.likes);
-        
+
         case 'retweet':
           return this.verifyRetweetAction(session, currentCounts.retweets);
-        
+
         case 'reply':
           return this.verifyReplyAction(session, currentCounts.tweets);
-        
+
         default:
           return {
             success: false,
@@ -135,7 +135,7 @@ export class NitterVerifier {
    */
   private verifyLikeAction(session: NitterVerificationSession, currentLikeCount: number): NitterVerificationResult {
     const likeCountDifference = currentLikeCount - session.initialLikeCount;
-    
+
     if (likeCountDifference === 1) {
       return {
         success: true,
@@ -180,7 +180,7 @@ export class NitterVerifier {
    */
   private verifyRetweetAction(session: NitterVerificationSession, currentRetweetCount: number): NitterVerificationResult {
     const retweetCountDifference = currentRetweetCount - (session.initialRetweetCount || 0);
-    
+
     if (retweetCountDifference === 1) {
       return {
         success: true,
@@ -225,7 +225,7 @@ export class NitterVerifier {
    */
   private verifyReplyAction(session: NitterVerificationSession, currentTweetCount: number): NitterVerificationResult {
     const tweetCountDifference = currentTweetCount - (session.initialTweetCount || 0);
-    
+
     if (tweetCountDifference === 1) {
       return {
         success: true,
@@ -276,26 +276,26 @@ export class NitterVerifier {
     try {
       // Remove @ if present
       const cleanHandle = twitterHandle.replace('@', '');
-      
+
       // Use Nitter instance to get user profile
       const nitterUrl = `https://nitter.net/${cleanHandle}`;
-      
+
       // We'll use a proxy approach since direct fetch might be blocked by CORS
       const response = await this.fetchWithProxy(nitterUrl);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch Nitter profile: ${response.status}`);
       }
-      
+
       const html = await response.text();
-      
+
       // Parse the HTML to extract all counts
       const counts = this.parseCountsFromHTML(html);
-      
+
       if (!counts) {
         throw new Error('Could not parse counts from Nitter profile');
       }
-      
+
       return counts;
     } catch (error) {
       console.error('Failed to get user counts:', error);
@@ -331,13 +331,13 @@ export class NitterVerifier {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url })
       });
-      
+
       if (!proxyResponse.ok) {
         throw new Error('Proxy request failed');
       }
-      
+
       const data = await proxyResponse.json();
-      
+
       // Create a mock Response object
       return {
         ok: true,
@@ -358,7 +358,7 @@ export class NitterVerifier {
     try {
       // Nitter shows stats in order: "Tweets Following Followers Likes"
       // Look for the profile stats section
-      
+
       const counts = {
         tweets: 0,
         likes: 0,
@@ -368,11 +368,11 @@ export class NitterVerifier {
       // Try to find the stats section with multiple patterns
       const statsPatterns = [
         // Pattern 1: Look for the profile stats container
-        /<div[^>]*class="[^"]*profile-stat[^"]*"[^>]*>(.*?)<\/div>/gis,
+        /<div[^>]*class="[^"]*profile-stat[^"]*"[^>]*>(.*?)<\/div>/gi,
         // Pattern 2: Look for stat items
-        /<span[^>]*class="[^"]*stat-num[^"]*"[^>]*>([0-9,]+)<\/span>\s*<span[^>]*class="[^"]*stat-header[^"]*"[^>]*>([^<]+)<\/span>/gis,
+        /<span[^>]*class="[^"]*stat-num[^"]*"[^>]*>([0-9,]+)<\/span>\s*<span[^>]*class="[^"]*stat-header[^"]*"[^>]*>([^<]+)<\/span>/gi,
         // Pattern 3: Simple pattern for numbers followed by labels
-        /([0-9,]+)\s*<[^>]*>\s*(Tweets|Following|Followers|Likes)/gis
+        /([0-9,]+)\s*<[^>]*>\s*(Tweets|Following|Followers|Likes)/gi
       ];
 
       // Try each pattern
@@ -382,7 +382,7 @@ export class NitterVerifier {
           if (match.length >= 3) {
             const count = parseInt(match[1].replace(/,/g, ''), 10);
             const label = match[2].toLowerCase().trim();
-            
+
             if (!isNaN(count)) {
               if (label.includes('tweet')) {
                 counts.tweets = count;
@@ -400,13 +400,13 @@ export class NitterVerifier {
         // Try specific patterns for each count type
         const tweetPattern = /Tweets[^0-9]*([0-9,]+)/i;
         const likePattern = /Likes[^0-9]*([0-9,]+)/i;
-        
+
         const tweetMatch = html.match(tweetPattern);
         if (tweetMatch) {
           const tweetCount = parseInt(tweetMatch[1].replace(/,/g, ''), 10);
           if (!isNaN(tweetCount)) counts.tweets = tweetCount;
         }
-        
+
         const likeMatch = html.match(likePattern);
         if (likeMatch) {
           const likeCount = parseInt(likeMatch[1].replace(/,/g, ''), 10);
@@ -439,7 +439,7 @@ export class NitterVerifier {
       // Nitter shows "RT @username" for retweets
       const retweetPattern = /RT\s+@\w+/gi;
       const retweetMatches = html.match(retweetPattern);
-      
+
       return retweetMatches ? retweetMatches.length : 0;
     } catch (error) {
       console.warn('Could not estimate retweet count:', error);
