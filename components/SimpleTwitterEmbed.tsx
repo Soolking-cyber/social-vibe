@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ExternalLink, Twitter, Eye } from 'lucide-react';
 import { widgetVerifier } from '@/lib/widget-verification';
 import { nitterVerifier } from '@/lib/nitter-verification';
+import { useSession } from 'next-auth/react';
 
 interface SimpleTwitterEmbedProps {
   tweetUrl: string;
@@ -26,11 +27,42 @@ export function SimpleTwitterEmbed({
   const [isInitializingNitter, setIsInitializingNitter] = useState(false);
   const [nitterError, setNitterError] = useState<string | null>(null);
   const [userTwitterHandle, setUserTwitterHandle] = useState<string>('');
+  const [isLoadingHandle, setIsLoadingHandle] = useState(true);
+  
+  const { data: session } = useSession();
 
   // Prevent hydration mismatch
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch user's Twitter handle from database
+  useEffect(() => {
+    const fetchTwitterHandle = async () => {
+      if (!session?.user?.email) {
+        setIsLoadingHandle(false);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/user/twitter-handle');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.twitterHandle) {
+            setUserTwitterHandle(data.twitterHandle);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch Twitter handle:', error);
+      } finally {
+        setIsLoadingHandle(false);
+      }
+    };
+
+    if (mounted && session) {
+      fetchTwitterHandle();
+    }
+  }, [mounted, session]);
 
   // Use ref to track if verification was already initialized
   const verificationInitialized = useRef(false);
@@ -56,7 +88,7 @@ export function SimpleTwitterEmbed({
   }, [mounted, tweetUrl, actionType]); // Removed onVerificationReady from deps
 
   const handleOpenTwitter = async () => {
-    // Initialize Nitter verification for all action types if handle is provided
+    // Automatically initialize Nitter verification if Twitter handle is available
     if (userTwitterHandle.trim() && typeof window !== 'undefined') {
       setIsInitializingNitter(true);
       setNitterError(null);
@@ -66,10 +98,10 @@ export function SimpleTwitterEmbed({
         const nitterActionType = normalizedActionType as 'like' | 'retweet' | 'reply';
         const nitterId = await nitterVerifier.startVerification(tweetUrl, userTwitterHandle, nitterActionType);
         setNitterVerificationId(nitterId);
-        console.log(`✓ Nitter verification initialized - ${actionType} count captured`);
+        console.log(`✓ Nitter verification initialized for @${userTwitterHandle} - ${actionType} count captured`);
       } catch (error) {
         console.error('Failed to initialize Nitter verification:', error);
-        setNitterError('Failed to initialize verification. Proceeding with manual verification.');
+        setNitterError('Failed to initialize automatic verification. You can still complete manually.');
       } finally {
         setIsInitializingNitter(false);
       }
@@ -188,22 +220,41 @@ export function SimpleTwitterEmbed({
         </div>
       </div>
 
-      {/* Twitter Handle Input for Nitter Verification */}
+      {/* Twitter Handle Status */}
       {!interactionCompleted && (
         <div className="mb-4">
-          <label className="block text-slate-300 text-sm font-medium mb-2">
-            Your Twitter Handle (for verification)
-          </label>
-          <input
-            type="text"
-            placeholder="@username"
-            value={userTwitterHandle}
-            onChange={(e) => setUserTwitterHandle(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-          />
-          <p className="text-slate-500 text-xs mt-1">
-            We'll verify your {actionType} by checking your profile on Nitter (no API costs)
-          </p>
+          {isLoadingHandle ? (
+            <div className="p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
+              <div className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                <span className="text-slate-300 text-sm">Loading your Twitter handle...</span>
+              </div>
+            </div>
+          ) : userTwitterHandle ? (
+            <div className="p-3 bg-green-900/20 border border-green-700 rounded-lg">
+              <div className="flex items-center gap-2 text-green-300">
+                <Twitter className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  ✓ Using your Twitter handle: @{userTwitterHandle}
+                </span>
+              </div>
+              <p className="text-green-200 text-xs mt-1">
+                We'll verify your {actionType} by checking your profile on Nitter (no API costs)
+              </p>
+            </div>
+          ) : (
+            <div className="p-3 bg-yellow-900/20 border border-yellow-700 rounded-lg">
+              <div className="flex items-center gap-2 text-yellow-300">
+                <Twitter className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  ⚠️ No Twitter handle found
+                </span>
+              </div>
+              <p className="text-yellow-200 text-xs mt-1">
+                Please set up your Twitter handle in your profile for automatic verification
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -234,10 +285,15 @@ export function SimpleTwitterEmbed({
           <>
             <Button
               onClick={handleOpenTwitter}
-              disabled={!userTwitterHandle.trim()}
+              disabled={isLoadingHandle}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
             >
-              {isInitializingNitter ? (
+              {isLoadingHandle ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Loading...
+                </>
+              ) : isInitializingNitter ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   Capturing {actionType} count...
@@ -246,6 +302,7 @@ export function SimpleTwitterEmbed({
                 <>
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Open Twitter & {actionLabels[actionType]}
+                  {userTwitterHandle && ' (Auto-verify)'}
                 </>
               )}
             </Button>
