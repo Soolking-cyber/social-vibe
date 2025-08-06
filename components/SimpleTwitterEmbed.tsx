@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Twitter } from 'lucide-react';
+import { widgetVerifier } from '@/lib/widget-verification';
 
 interface SimpleTwitterEmbedProps {
   tweetUrl: string;
@@ -18,22 +19,45 @@ export function SimpleTwitterEmbed({
   onVerificationReady 
 }: SimpleTwitterEmbedProps) {
   const [interactionCompleted, setInteractionCompleted] = useState(false);
+  const [verificationId, setVerificationId] = useState<string | null>(null);
+
+  // Initialize verification session on mount
+  useEffect(() => {
+    const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
+    const vId = widgetVerifier.startVerification(normalizedActionType, tweetUrl);
+    setVerificationId(vId);
+    onVerificationReady?.(vId);
+  }, [tweetUrl, actionType, onVerificationReady]);
 
   const handleOpenTwitter = () => {
     // Open Twitter in a new tab
     window.open(tweetUrl, '_blank', 'noopener,noreferrer');
-    
-    // Generate a simple verification ID
-    const verificationId = `simple_${Date.now()}`;
-    onVerificationReady?.(verificationId);
   };
 
   const handleConfirmInteraction = () => {
+    if (verificationId) {
+      // Record the interaction in the verification system
+      const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
+      widgetVerifier.recordInteraction(verificationId, normalizedActionType);
+      
+      // Extract tweet ID for history recording
+      const tweetId = extractTweetId(tweetUrl);
+      if (tweetId) {
+        widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
+      }
+    }
+    
     setInteractionCompleted(true);
     onInteraction?.(actionType);
     
     // Show simple feedback
     console.log(`✓ ${actionType} interaction confirmed`);
+  };
+
+  // Extract tweet ID from URL
+  const extractTweetId = (url: string): string | null => {
+    const match = url.match(/status\/(\d+)/);
+    return match ? match[1] : null;
   };
 
   const actionEmojis = {
