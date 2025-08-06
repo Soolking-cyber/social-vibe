@@ -13,11 +13,11 @@ interface SimpleTwitterEmbedProps {
   onVerificationReady?: (verificationId: string) => void;
 }
 
-export function SimpleTwitterEmbed({ 
-  tweetUrl, 
-  actionType, 
-  onInteraction, 
-  onVerificationReady 
+export function SimpleTwitterEmbed({
+  tweetUrl,
+  actionType,
+  onInteraction,
+  onVerificationReady
 }: SimpleTwitterEmbedProps) {
   const [interactionCompleted, setInteractionCompleted] = useState(false);
   const [verificationId, setVerificationId] = useState<string | null>(null);
@@ -35,15 +35,17 @@ export function SimpleTwitterEmbed({
   }, [tweetUrl, actionType, onVerificationReady]);
 
   const handleOpenTwitter = async () => {
-    // For like actions, initialize Nitter verification
-    if (actionType === 'like' && userTwitterHandle) {
+    // Initialize Nitter verification for all action types if handle is provided
+    if (userTwitterHandle.trim()) {
       setIsInitializingNitter(true);
       setNitterError(null);
-      
+
       try {
-        const nitterId = await nitterVerifier.startLikeVerification(tweetUrl, userTwitterHandle);
+        const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
+        const nitterActionType = normalizedActionType as 'like' | 'retweet' | 'reply';
+        const nitterId = await nitterVerifier.startVerification(tweetUrl, userTwitterHandle, nitterActionType);
         setNitterVerificationId(nitterId);
-        console.log('✓ Nitter verification initialized - like count captured');
+        console.log(`✓ Nitter verification initialized - ${actionType} count captured`);
       } catch (error) {
         console.error('Failed to initialize Nitter verification:', error);
         setNitterError('Failed to initialize verification. Proceeding with manual verification.');
@@ -51,31 +53,33 @@ export function SimpleTwitterEmbed({
         setIsInitializingNitter(false);
       }
     }
-    
+
     // Open Twitter in a new tab
     window.open(tweetUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleConfirmInteraction = async () => {
-    // For like actions with Nitter verification, verify the like count
-    if (actionType === 'like' && nitterVerificationId) {
+    // Normalize action type once at the beginning
+    const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
+
+    // For all actions with Nitter verification, verify the count
+    if (nitterVerificationId) {
       try {
-        const nitterResult = await nitterVerifier.verifyLikeCompletion(nitterVerificationId);
-        
+        const nitterResult = await nitterVerifier.verifyCompletion(nitterVerificationId);
+
         if (nitterResult.success) {
           console.log('✓ Nitter verification successful:', nitterResult.details);
-          
+
           // Record in widget verifier as well
           if (verificationId) {
-            const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
             widgetVerifier.recordInteraction(verificationId, normalizedActionType);
-            
+
             const tweetId = extractTweetId(tweetUrl);
             if (tweetId) {
               widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
             }
           }
-          
+
           setInteractionCompleted(true);
           onInteraction?.(actionType);
           return;
@@ -90,21 +94,20 @@ export function SimpleTwitterEmbed({
         return;
       }
     }
-    
+
     // Fallback to regular verification for non-like actions or when Nitter fails
     if (verificationId) {
-      const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
       widgetVerifier.recordInteraction(verificationId, normalizedActionType);
-      
+
       const tweetId = extractTweetId(tweetUrl);
       if (tweetId) {
         widgetVerifier.recordInteractionHistory(tweetId, normalizedActionType);
       }
     }
-    
+
     setInteractionCompleted(true);
     onInteraction?.(actionType);
-    
+
     console.log(`✓ ${actionType} interaction confirmed`);
   };
 
@@ -123,7 +126,7 @@ export function SimpleTwitterEmbed({
 
   const actionLabels = {
     like: 'Like',
-    retweet: 'Retweet', 
+    retweet: 'Retweet',
     reply: 'Reply',
     comment: 'Comment'
   };
@@ -136,7 +139,7 @@ export function SimpleTwitterEmbed({
           <Twitter className="h-5 w-5 text-blue-400" />
           <span className="text-slate-300 text-sm">Twitter Action Required</span>
         </div>
-        
+
         <div className="text-center py-6">
           <div className="text-4xl mb-2">{actionEmojis[actionType]}</div>
           <p className="text-white font-medium mb-2">
@@ -148,8 +151,8 @@ export function SimpleTwitterEmbed({
         </div>
       </div>
 
-      {/* Twitter Handle Input for Like Verification */}
-      {actionType === 'like' && !interactionCompleted && (
+      {/* Twitter Handle Input for Nitter Verification */}
+      {!interactionCompleted && (
         <div className="mb-4">
           <label className="block text-slate-300 text-sm font-medium mb-2">
             Your Twitter Handle (for verification)
@@ -162,18 +165,18 @@ export function SimpleTwitterEmbed({
             className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
           />
           <p className="text-slate-500 text-xs mt-1">
-            We'll verify your like by checking your profile on Nitter (no API costs)
+            We'll verify your {actionType} by checking your profile on Nitter (no API costs)
           </p>
         </div>
       )}
 
       {/* Nitter Status */}
-      {actionType === 'like' && nitterVerificationId && (
+      {nitterVerificationId && (
         <div className="mb-4 p-3 bg-green-900/20 border border-green-700 rounded-lg">
           <div className="flex items-center gap-2 text-green-300">
             <Eye className="h-4 w-4" />
             <span className="text-sm font-medium">
-              ✓ Like count captured - ready for verification
+              ✓ {actionType.charAt(0).toUpperCase() + actionType.slice(1)} count captured - ready for verification
             </span>
           </div>
         </div>
@@ -194,13 +197,13 @@ export function SimpleTwitterEmbed({
           <>
             <Button
               onClick={handleOpenTwitter}
-              disabled={actionType === 'like' && !userTwitterHandle.trim()}
+              disabled={!userTwitterHandle.trim()}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
             >
               {isInitializingNitter ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Capturing like count...
+                  Capturing {actionType} count...
                 </>
               ) : (
                 <>
@@ -209,16 +212,16 @@ export function SimpleTwitterEmbed({
                 </>
               )}
             </Button>
-            
+
             <Button
               onClick={handleConfirmInteraction}
               variant="outline"
               className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
             >
-              {actionType === 'like' && nitterVerificationId ? (
+              {nitterVerificationId ? (
                 <>
                   <Eye className="h-4 w-4 mr-2" />
-                  Verify Like (Check Count)
+                  Verify {actionLabels[actionType]} (Check Count)
                 </>
               ) : (
                 `✓ I completed the ${actionType}`
@@ -240,7 +243,7 @@ export function SimpleTwitterEmbed({
       {/* Instructions */}
       <div className="mt-4 p-3 bg-slate-800/30 border border-slate-700 rounded-lg">
         <p className="text-slate-400 text-xs">
-          <strong>Instructions:</strong> Click "Open Twitter" to complete the {actionType} action, 
+          <strong>Instructions:</strong> Click "Open Twitter" to complete the {actionType} action,
           then click "I completed" to verify and earn your reward.
         </p>
       </div>
