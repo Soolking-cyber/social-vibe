@@ -28,6 +28,8 @@ export function SimpleTwitterEmbed({
   const [nitterError, setNitterError] = useState<string | null>(null);
   const [userTwitterHandle, setUserTwitterHandle] = useState<string>('');
   const [isLoadingHandle, setIsLoadingHandle] = useState(true);
+  const [twitterOpenedAt, setTwitterOpenedAt] = useState<number | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number>(0);
 
   const { data: session } = useSession();
 
@@ -87,6 +89,23 @@ export function SimpleTwitterEmbed({
     verificationInitialized.current = true;
   }, [mounted, tweetUrl, actionType]); // Removed onVerificationReady from deps
 
+  // Timer for countdown
+  useEffect(() => {
+    if (!twitterOpenedAt) return;
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - twitterOpenedAt;
+      const remaining = Math.max(0, Math.ceil((10000 - elapsed) / 1000));
+      setTimeRemaining(remaining);
+
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [twitterOpenedAt]);
+
   const handleOpenTwitter = async () => {
     // Automatically initialize Nitter verification if Twitter handle is available
     if (userTwitterHandle.trim() && typeof window !== 'undefined') {
@@ -110,6 +129,7 @@ export function SimpleTwitterEmbed({
     // Open Twitter in a new tab (client-side only)
     if (typeof window !== 'undefined') {
       window.open(tweetUrl, '_blank', 'noopener,noreferrer');
+      setTwitterOpenedAt(Date.now());
     }
   };
 
@@ -117,24 +137,47 @@ export function SimpleTwitterEmbed({
     // Normalize action type once at the beginning
     const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
 
+    console.log('🔍 VERIFICATION ATTEMPT:', {
+      userTwitterHandle,
+      nitterVerificationId,
+      actionType: normalizedActionType
+    });
+
     // SECURITY: NO VERIFICATION WITHOUT TWITTER HANDLE - PERIOD!
     if (!userTwitterHandle) {
+      console.error('❌ SECURITY BLOCK: No Twitter handle');
       setNitterError('🔒 Twitter handle required for verification. Please log out and log back in with Twitter to set up your handle.');
       return;
     }
 
     // SECURITY: NO VERIFICATION WITHOUT NITTER INITIALIZATION - PERIOD!
     if (!nitterVerificationId) {
+      console.error('❌ SECURITY BLOCK: No Nitter verification ID');
       setNitterError('🔒 Please click "Open Twitter" first to initialize verification before confirming.');
       return;
     }
 
+    // SECURITY: REQUIRE MINIMUM TIME DELAY (prevent instant verification)
+    const MIN_ACTION_TIME = 10000; // 10 seconds minimum
+    if (twitterOpenedAt && (Date.now() - twitterOpenedAt) < MIN_ACTION_TIME) {
+      const remainingTime = Math.ceil((MIN_ACTION_TIME - (Date.now() - twitterOpenedAt)) / 1000);
+      console.error('❌ SECURITY BLOCK: Too fast verification attempt');
+      setNitterError(`🔒 Please wait ${remainingTime} more seconds before verifying. This ensures you had time to complete the action.`);
+      return;
+    }
+
+    // Add loading state
+    setNitterError('🔍 Verifying your action...');
+
     // ONLY ALLOW NITTER VERIFICATION - NO MANUAL BYPASS
     try {
+      console.log('🔍 Starting Nitter verification for ID:', nitterVerificationId);
       const nitterResult = await nitterVerifier.verifyCompletion(nitterVerificationId);
 
+      console.log('🔍 Nitter verification result:', nitterResult);
+
       if (nitterResult.success) {
-        console.log('✓ Nitter verification successful:', nitterResult.details);
+        console.log('✅ VERIFICATION SUCCESS:', nitterResult.details);
 
         // Record in widget verifier as well
         if (verificationId) {
@@ -146,16 +189,17 @@ export function SimpleTwitterEmbed({
           }
         }
 
+        setNitterError(null);
         setInteractionCompleted(true);
         onInteraction?.(actionType);
         return;
       } else {
-        console.warn('Nitter verification failed:', nitterResult.details);
+        console.error('❌ VERIFICATION FAILED:', nitterResult);
         setNitterError(`🔒 Verification failed: ${nitterResult.details}. You must actually complete the ${actionType} action on Twitter.`);
         return;
       }
     } catch (error) {
-      console.error('Nitter verification error:', error);
+      console.error('❌ VERIFICATION ERROR:', error);
       setNitterError('🔒 Verification error. Please try again or contact support.');
       return;
     }
@@ -305,7 +349,7 @@ export function SimpleTwitterEmbed({
             <Button
               onClick={handleConfirmInteraction}
               variant="outline"
-              disabled={!userTwitterHandle || !nitterVerificationId}
+              disabled={!userTwitterHandle || !nitterVerificationId || timeRemaining > 0}
               className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
               {!userTwitterHandle ? (
@@ -315,6 +359,10 @@ export function SimpleTwitterEmbed({
               ) : !nitterVerificationId ? (
                 <>
                   🔒 Click "Open Twitter" first to verify
+                </>
+              ) : timeRemaining > 0 ? (
+                <>
+                  ⏳ Wait {timeRemaining}s to verify
                 </>
               ) : (
                 <>
