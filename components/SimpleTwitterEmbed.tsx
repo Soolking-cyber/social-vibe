@@ -38,21 +38,54 @@ export function SimpleTwitterEmbed({
   // Fetch user's Twitter handle from database
   useEffect(() => {
     const fetchTwitterHandle = async () => {
-      if (!session?.user?.email) {
+      console.log('🔍 Session data:', session);
+      
+      if (!session?.user) {
+        console.warn('⚠️ No session or user found');
         setIsLoadingHandle(false);
         return;
       }
 
+      // FIRST: Try to get from session directly (if available)
+      const sessionHandle = (session.user as any).twitterHandle;
+      if (sessionHandle) {
+        console.log('✅ Found Twitter handle in session:', sessionHandle);
+        setUserTwitterHandle(sessionHandle);
+        setIsLoadingHandle(false);
+        return;
+      }
+
+      // SECOND: Try to extract from session name (common pattern)
+      if (session.user.name && session.user.name.startsWith('@')) {
+        const handleFromName = session.user.name.replace('@', '');
+        console.log('✅ Extracted Twitter handle from session name:', handleFromName);
+        setUserTwitterHandle(handleFromName);
+        setIsLoadingHandle(false);
+        return;
+      }
+
+      // THIRD: Try API call to database
       try {
+        console.log('🔍 Fetching Twitter handle from API...');
         const response = await fetch('/api/user/twitter-handle');
+        console.log('📡 API response status:', response.status);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log('📊 API response data:', data);
+          
           if (data.twitterHandle) {
             setUserTwitterHandle(data.twitterHandle);
+            console.log('✅ Twitter handle set from API:', data.twitterHandle);
+          } else {
+            console.warn('⚠️ No Twitter handle in API response:', data);
           }
+        } else {
+          const errorData = await response.text();
+          console.error('❌ API response not ok:', response.status, errorData);
         }
       } catch (error) {
-        console.error('Failed to fetch Twitter handle:', error);
+        console.error('❌ Failed to fetch Twitter handle:', error);
       } finally {
         setIsLoadingHandle(false);
       }

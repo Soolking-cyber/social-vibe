@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
+  let url = '';
   try {
-    const { url } = await request.json();
+    const body = await request.json();
+    url = body.url;
     
     if (!url || !url.includes('nitter.net')) {
       return NextResponse.json(
@@ -40,7 +42,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Nitter proxy error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch from Nitter' },
+      { 
+        error: 'Failed to fetch from Nitter',
+        details: error instanceof Error ? error.message : String(error),
+        url: url
+      },
       { status: 500 }
     );
   }
