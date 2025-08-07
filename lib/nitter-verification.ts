@@ -367,17 +367,10 @@ export class NitterVerifier {
    * Fetch with proxy to avoid CORS issues
    */
   private async fetchWithProxy(url: string): Promise<Response> {
-    // Try direct fetch first
+    console.log('🔍 Fetching Nitter data for:', url);
+    
+    // Skip direct fetch since it will always fail due to CORS, go straight to proxy
     try {
-      const response = await fetch(url, {
-        mode: 'cors',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      return response;
-    } catch (error) {
-      // If direct fetch fails, try through our API proxy
       const proxyResponse = await fetch('/api/nitter-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -385,17 +378,33 @@ export class NitterVerifier {
       });
 
       if (!proxyResponse.ok) {
-        throw new Error('Proxy request failed');
+        const errorData = await proxyResponse.json();
+        console.error('❌ Proxy request failed:', errorData);
+        throw new Error(`Proxy request failed: ${errorData.error || proxyResponse.status}`);
       }
 
       const data = await proxyResponse.json();
+      console.log('✅ Proxy response received:', { 
+        success: data.success, 
+        instance: data.instance,
+        hasHtml: !!data.html,
+        htmlLength: data.html?.length 
+      });
 
-      // Create a mock Response object
+      if (!data.success || !data.html) {
+        throw new Error('Invalid proxy response: missing HTML data');
+      }
+
+      // Create a mock Response object with the proxy data
       return {
         ok: true,
         status: 200,
         text: async () => data.html
       } as Response;
+      
+    } catch (error) {
+      console.error('❌ Nitter proxy error:', error);
+      throw new Error(`Failed to fetch Nitter data: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -39,7 +39,7 @@ export function SimpleTwitterEmbed({
   useEffect(() => {
     const fetchTwitterHandle = async () => {
       console.log('🔍 Session data:', session);
-      
+
       if (!session?.user) {
         console.warn('⚠️ No session or user found');
         setIsLoadingHandle(false);
@@ -69,11 +69,11 @@ export function SimpleTwitterEmbed({
         console.log('🔍 Fetching Twitter handle from API...');
         const response = await fetch('/api/user/twitter-handle');
         console.log('📡 API response status:', response.status);
-        
+
         if (response.ok) {
           const data = await response.json();
           console.log('📊 API response data:', data);
-          
+
           if (data.twitterHandle) {
             setUserTwitterHandle(data.twitterHandle);
             console.log('✅ Twitter handle set from API:', data.twitterHandle);
