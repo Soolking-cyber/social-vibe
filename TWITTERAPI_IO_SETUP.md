@@ -13,11 +13,20 @@ TwitterAPI.io is a professional Twitter API service that provides:
 
 ## Configuration
 
-### Credentials (Already Configured)
-- **User ID**: `344176544479072260`
-- **API Key**: `344176544479072260`
+### Environment Variables Required
+Add these to your `.env.local` file:
 
-These credentials are already hardcoded in the application for immediate use.
+```bash
+TWITTERAPI_IO_USER_ID=344176544479072260
+TWITTERAPI_IO_API_KEY=e8191bd0956349cc9bd70c8c065e0183
+```
+
+### For Vercel Deployment
+Set these environment variables in your Vercel dashboard:
+- `TWITTERAPI_IO_USER_ID` = `344176544479072260`
+- `TWITTERAPI_IO_API_KEY` = `e8191bd0956349cc9bd70c8c065e0183`
+
+See `VERCEL_DEPLOYMENT.md` for detailed deployment instructions.
 
 ## How It Works
 

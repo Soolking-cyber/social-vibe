@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// TwitterAPI.io credentials
-const TWITTERAPI_IO_USER_ID = '344176544479072260';
-const TWITTERAPI_IO_API_KEY = '344176544479072260';
+// TwitterAPI.io credentials from environment variables
+const TWITTERAPI_IO_USER_ID = process.env.TWITTERAPI_IO_USER_ID;
+const TWITTERAPI_IO_API_KEY = process.env.TWITTERAPI_IO_API_KEY;
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +17,15 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🔍 TwitterAPI.io proxy request:', { username, action });
+
+    // Check if credentials are configured
+    if (!TWITTERAPI_IO_USER_ID || !TWITTERAPI_IO_API_KEY) {
+      console.error('❌ TwitterAPI.io credentials not configured');
+      return NextResponse.json(
+        { error: 'TwitterAPI.io credentials not configured. Please set TWITTERAPI_IO_USER_ID and TWITTERAPI_IO_API_KEY environment variables.' },
+        { status: 500 }
+      );
+    }
 
     if (action === 'getUserCounts') {
       return await getUserCounts(username);
@@ -116,11 +125,14 @@ async function getUserCounts(username: string) {
 
 // Health check
 export async function GET() {
+  const isConfigured = !!(TWITTERAPI_IO_USER_ID && TWITTERAPI_IO_API_KEY);
+  
   return NextResponse.json({
-    status: 'healthy',
+    status: isConfigured ? 'healthy' : 'misconfigured',
     service: 'twitterapi-io-proxy',
-    configured: true,
-    userId: TWITTERAPI_IO_USER_ID,
+    configured: isConfigured,
+    userId: TWITTERAPI_IO_USER_ID || 'not_set',
+    hasApiKey: !!TWITTERAPI_IO_API_KEY,
     timestamp: new Date().toISOString()
   });
 }
