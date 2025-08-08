@@ -16,16 +16,16 @@ console.log('🔧 Environment variables check:', {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { username, action, tweetId } = body;
+    const { action, tweetId, username } = body;
 
-    if (!username || !action) {
+    if (!action) {
       return NextResponse.json(
-        { error: 'Missing username or action' },
+        { error: 'Missing action parameter' },
         { status: 400 }
       );
     }
 
-    console.log('🔍 TwitterAPI.io proxy request:', { username, action, tweetId });
+    console.log('🔍 TwitterAPI.io proxy request:', { action, tweetId, username });
 
     // Check if credentials are configured
     if (!TWITTERAPI_IO_USER_ID || !TWITTERAPI_IO_API_KEY) {
@@ -41,32 +41,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Handle different actions
+    // Handle different actions - optimized for minimal API usage
     switch (action) {
-      case 'getUserCounts':
-        return await getUserCounts(username);
+      case 'getTweetCounts':
+        if (!tweetId) {
+          return NextResponse.json({ error: 'Tweet ID required for getting tweet counts' }, { status: 400 });
+        }
+        return await getTweetCounts(tweetId);
 
       case 'verifyLike':
         if (!tweetId) {
           return NextResponse.json({ error: 'Tweet ID required for like verification' }, { status: 400 });
         }
-        return await verifyTweetInteraction(username, tweetId, 'like');
+        const { beforeCounts: beforeLike, afterCounts: afterLike } = body;
+        return await verifyTweetEngagement(tweetId, 'like', beforeLike, afterLike);
 
       case 'verifyRetweet':
         if (!tweetId) {
           return NextResponse.json({ error: 'Tweet ID required for retweet verification' }, { status: 400 });
         }
-        return await verifyTweetInteraction(username, tweetId, 'retweet');
+        const { beforeCounts: beforeRetweet, afterCounts: afterRetweet } = body;
+        return await verifyTweetEngagement(tweetId, 'retweet', beforeRetweet, afterRetweet);
 
       case 'verifyReply':
         if (!tweetId) {
           return NextResponse.json({ error: 'Tweet ID required for reply verification' }, { status: 400 });
         }
-        return await verifyReplyInteraction(username, tweetId);
+        const { beforeCounts: beforeReply, afterCounts: afterReply } = body;
+        return await verifyTweetEngagement(tweetId, 'reply', beforeReply, afterReply);
 
       default:
         return NextResponse.json(
-          { error: 'Unsupported action. Supported: getUserCounts, verifyLike, verifyRetweet, verifyReply' },
+          { error: 'Unsupported action. Primary actions: getTweetCounts, verifyLike, verifyRetweet, verifyReply' },
           { status: 400 }
         );
     }
@@ -83,16 +89,36 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function getUserCounts(username: string) {
+// Simple in-memory cache to prevent duplicate API calls within a short timeframe
+const tweetCountsCache = new Map<string, { counts: any; timestamp: number }>();
+const CACHE_DURATION = 30000; // 30 seconds cache
+
+/**
+ * Get tweet engagement counts with caching to minimize API usage
+ */
+
+async function getTweetCounts(tweetId: string, skipCache = false) {
   try {
-    console.log(`🔍 Fetching user counts for @${username} via TwitterAPI.io...`);
+    // Check cache first to avoid unnecessary API calls
+    if (!skipCache) {
+      const cached = tweetCountsCache.get(tweetId);
+      if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+        console.log(`📋 Using cached tweet counts for ${tweetId}`);
+        return NextResponse.json({
+          success: true,
+          counts: cached.counts,
+          tweetId,
+          service: 'twitterapi.io',
+          timestamp: new Date(cached.timestamp).toISOString(),
+          cached: true
+        });
+      }
+    }
 
-    // Use the correct TwitterAPI.io endpoint
-    console.log(`🔄 Fetching user data for: ${username}`);
-    console.log(`🔑 Using API key: ${TWITTERAPI_IO_API_KEY ? 'SET' : 'NOT SET'}`);
+    console.log(`🔍 Fetching fresh tweet counts for tweet ${tweetId}`);
 
-    const userInfoResponse = await fetch(
-      `https://api.twitterapi.io/twitter/user/last_tweets?userName=${username}&count=1`,
+    const response = await fetch(
+      `https://api.twitterapi.io/twitter/tweets?tweet_ids=${tweetId}`,
       {
         method: 'GET',
         headers: {
@@ -101,23 +127,23 @@ async function getUserCounts(username: string) {
       }
     );
 
-    if (!userInfoResponse.ok) {
-      const errorData = await userInfoResponse.text();
-      console.error('❌ TwitterAPI.io user lookup failed:', {
-        status: userInfoResponse.status,
-        statusText: userInfoResponse.statusText,
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('❌ TwitterAPI.io tweet lookup failed:', {
+        status: response.status,
+        statusText: response.statusText,
         errorData,
-        headers: Object.fromEntries(userInfoResponse.headers.entries())
+        tweetId
       });
 
-      if (userInfoResponse.status === 401) {
+      if (response.status === 401) {
         return NextResponse.json(
           { error: 'TwitterAPI.io authentication failed. API key may be invalid.' },
           { status: 401 }
         );
       }
 
-      if (userInfoResponse.status === 429) {
+      if (response.status === 429) {
         return NextResponse.json(
           { error: 'TwitterAPI.io rate limit exceeded. Please try again later.' },
           { status: 429 }
@@ -125,161 +151,51 @@ async function getUserCounts(username: string) {
       }
 
       return NextResponse.json(
-        { error: `TwitterAPI.io error: ${errorData || userInfoResponse.status}` },
-        { status: userInfoResponse.status }
+        { error: `TwitterAPI.io error: ${errorData || response.status}` },
+        { status: response.status }
       );
     }
 
-    const userData = await userInfoResponse.json();
-    console.log('📊 TwitterAPI.io user data:', userData);
+    const tweetData = await response.json();
 
-    if (!userData.data || !Array.isArray(userData.data) || userData.data.length === 0) {
-      console.error('❌ No tweets found for user:', username);
-      
-      // For users with no tweets, we can't get their profile data from tweets endpoint
-      // Let's try a different approach - return a default response that allows verification to continue
-      console.log('🔄 User has no tweets, providing fallback response...');
-      
-      return NextResponse.json({
-        success: true,
-        counts: {
-          tweets: 0,
-          likes: 0,
-          retweets: 0,
-          following: 0,
-          followers: 0
-        },
-        username,
-        userId: `fallback_${username}`,
-        service: 'twitterapi.io',
-        note: 'User has no tweets - using fallback counts'
-      });
-    }
-
-    // Get user info from the first tweet's author data
-    const firstTweet = userData.data[0];
-    const user = firstTweet.author;
-
-    if (!user) {
-      console.error('❌ No user data found in tweets');
+    if (!tweetData.tweets || !Array.isArray(tweetData.tweets) || tweetData.tweets.length === 0) {
+      console.error('❌ Tweet not found:', tweetId);
       return NextResponse.json(
-        { error: 'Unable to extract user data from tweets' },
+        { error: 'Tweet not found or is private' },
         { status: 404 }
       );
     }
 
-    // Extract counts from user data (TwitterAPI.io tweets endpoint format)
+    const tweet = tweetData.tweets[0];
     const counts = {
-      tweets: user.statusesCount || user.tweetsCount || 0,
-      likes: user.favouritesCount || user.likesCount || 0,
-      retweets: 0, // TwitterAPI.io doesn't provide user's retweet count directly
-      following: user.followingCount || user.friendsCount || user.following || 0,
-      followers: user.followersCount || user.followers || 0
+      likes: tweet.likeCount || tweet.favorite_count || 0,
+      retweets: tweet.retweetCount || tweet.retweet_count || 0,
+      replies: tweet.replyCount || tweet.reply_count || 0,
+      quotes: tweet.quoteCount || tweet.quote_count || 0
     };
 
-    console.log('✅ Successfully fetched user counts via TwitterAPI.io:', counts);
+    // Cache the result to minimize future API calls
+    tweetCountsCache.set(tweetId, {
+      counts,
+      timestamp: Date.now()
+    });
+
+    console.log('✅ Successfully fetched and cached tweet counts:', counts);
 
     return NextResponse.json({
       success: true,
       counts,
-      username,
-      userId: user.id || user.userId,
-      service: 'twitterapi.io'
-    });
-
-  } catch (error) {
-    console.error('❌ Error fetching user counts via TwitterAPI.io:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch user counts',
-        details: error instanceof Error ? error.message : String(error)
-      },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * Verify if a user has replied to a specific tweet
- */
-async function verifyReplyInteraction(username: string, tweetId: string) {
-  try {
-    console.log(`🔍 Verifying reply for @${username} on tweet ${tweetId}`);
-
-    // Method 1: Check tweet replies directly
-    const repliesResponse = await fetch(
-      `https://api.twitterapi.io/twitter/tweet/replies?tweetId=${tweetId}&count=100`,
-      {
-        method: 'GET',
-        headers: {
-          'X-API-Key': TWITTERAPI_IO_API_KEY!,
-        },
-      }
-    );
-
-    let foundInReplies = false;
-    if (repliesResponse.ok) {
-      const repliesData = await repliesResponse.json();
-      console.log(`📊 Tweet replies data:`, repliesData);
-
-      if (repliesData.data && Array.isArray(repliesData.data)) {
-        foundInReplies = repliesData.data.some((reply: any) => {
-          return reply.author?.userName === username || 
-                 reply.author?.screenName === username ||
-                 reply.user?.screen_name === username;
-        });
-      }
-    }
-
-    // Method 2: Check user's recent tweets for replies to this tweet
-    const userTweetsResponse = await fetch(
-      `https://api.twitterapi.io/twitter/user/last_tweets?userName=${username}&count=50`,
-      {
-        method: 'GET',
-        headers: {
-          'X-API-Key': TWITTERAPI_IO_API_KEY!,
-        },
-      }
-    );
-
-    let foundInUserTweets = false;
-    if (userTweetsResponse.ok) {
-      const userTweetsData = await userTweetsResponse.json();
-      console.log(`📊 User tweets data:`, userTweetsData);
-
-      if (userTweetsData.data && Array.isArray(userTweetsData.data)) {
-        foundInUserTweets = userTweetsData.data.some((tweet: any) => {
-          return tweet.inReplyToId === tweetId || 
-                 tweet.in_reply_to_status_id_str === tweetId ||
-                 tweet.conversationId === tweetId ||
-                 (tweet.isReply && tweet.text?.includes(tweetId));
-        });
-      }
-    }
-
-    const verified = foundInReplies || foundInUserTweets;
-
-    return NextResponse.json({
-      success: true,
-      verified,
-      action: 'reply',
-      username,
       tweetId,
-      message: verified
-        ? `✅ Verified: User @${username} has replied to the tweet`
-        : `❌ Not verified: User @${username} has not replied to the tweet`,
-      methods: {
-        foundInReplies,
-        foundInUserTweets
-      },
-      service: 'twitterapi.io'
+      service: 'twitterapi.io',
+      timestamp: new Date().toISOString(),
+      cached: false
     });
 
   } catch (error) {
-    console.error(`❌ Error verifying reply:`, error);
+    console.error('❌ Error fetching tweet counts:', error);
     return NextResponse.json(
       {
-        error: `Failed to verify reply`,
+        error: 'Failed to fetch tweet counts',
         details: error instanceof Error ? error.message : String(error)
       },
       { status: 500 }
@@ -288,133 +204,99 @@ async function verifyReplyInteraction(username: string, tweetId: string) {
 }
 
 /**
- * Verify if a user has interacted with a specific tweet
- * This is a verification-only approach - we don't perform actions, just verify them
+ * Optimized verification - only fetches after counts when needed
  */
-async function verifyTweetInteraction(username: string, tweetId: string, actionType: 'like' | 'retweet') {
+async function verifyTweetEngagement(
+  tweetId: string,
+  actionType: 'like' | 'retweet' | 'reply',
+  beforeCounts?: any,
+  afterCounts?: any
+) {
   try {
-    console.log(`🔍 Verifying ${actionType} for @${username} on tweet ${tweetId}`);
+    console.log(`🔍 Verifying ${actionType} on tweet ${tweetId} (API-optimized)`);
 
-    // Method 1: Check the tweet's engagement data to see if user interacted
-    const tweetResponse = await fetch(
-      `https://api.twitterapi.io/twitter/tweet/details?tweetId=${tweetId}`,
-      {
-        method: 'GET',
-        headers: {
-          'X-API-Key': TWITTERAPI_IO_API_KEY!,
-        },
-      }
-    );
-
-    let foundInTweetData = false;
-    if (tweetResponse.ok) {
-      const tweetData = await tweetResponse.json();
-      console.log(`📊 Tweet details:`, tweetData);
-
-      // Check if user is in the tweet's engagement data
-      if (tweetData.data) {
-        const tweet = tweetData.data;
-        
-        // For likes, check if user liked the tweet
-        if (actionType === 'like' && tweet.likedBy) {
-          foundInTweetData = tweet.likedBy.some((user: any) => 
-            user.userName === username || user.screenName === username
-          );
-        }
-        
-        // For retweets, check if user retweeted
-        if (actionType === 'retweet' && tweet.retweetedBy) {
-          foundInTweetData = tweet.retweetedBy.some((user: any) => 
-            user.userName === username || user.screenName === username
-          );
-        }
-      }
+    // If no before counts, we can't verify (need baseline)
+    if (!beforeCounts) {
+      return NextResponse.json({
+        success: false,
+        error: 'Before counts required for verification',
+        message: 'Please provide beforeCounts to compare against. Call getTweetCounts first.',
+        tweetId,
+        service: 'twitterapi.io'
+      }, { status: 400 });
     }
 
-    // Method 2: Check user's recent activity
-    let endpoint = '';
-    if (actionType === 'like') {
-      // Try user likes endpoint
-      endpoint = `https://api.twitterapi.io/twitter/user/likes?userName=${username}&count=50`;
-    } else if (actionType === 'retweet') {
-      // Check user's recent tweets (including retweets)
-      endpoint = `https://api.twitterapi.io/twitter/user/last_tweets?userName=${username}&count=50`;
-    }
+    // Only fetch after counts if not provided (saves API calls)
+    let currentCounts = afterCounts;
+    if (!currentCounts) {
+      console.log('📡 Fetching after counts (1 API call)...');
+      const countsResponse = await getTweetCounts(tweetId, true); // Skip cache for verification
+      const countsData = await countsResponse.json();
 
-    let foundInUserActivity = false;
-    const userResponse = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'X-API-Key': TWITTERAPI_IO_API_KEY!,
-      },
-    });
-
-    if (userResponse.ok) {
-      const userData = await userResponse.json();
-      console.log(`📊 User ${actionType}s data:`, userData);
-
-      // Check if the specific tweet is in the user's recent activity
-      if (userData.data && Array.isArray(userData.data)) {
-        foundInUserActivity = userData.data.some((item: any) => {
-          // For likes, check if the liked tweet ID matches
-          if (actionType === 'like') {
-            return item.id === tweetId || 
-                   item.tweetId === tweetId ||
-                   item.id_str === tweetId;
-          }
-          // For retweets, check if it's a retweet of the target tweet
-          if (actionType === 'retweet') {
-            return (item.retweeted_tweet && (item.retweeted_tweet.id === tweetId || item.retweeted_tweet.id_str === tweetId)) ||
-                   (item.quoted_tweet && (item.quoted_tweet.id === tweetId || item.quoted_tweet.id_str === tweetId)) ||
-                   (item.isRetweet && item.originalTweetId === tweetId) ||
-                   item.text?.includes(tweetId);
-          }
-          return false;
-        });
+      if (!countsData.success) {
+        return countsData; // Return the error response
       }
+
+      currentCounts = countsData.counts;
     } else {
-      console.warn(`⚠️ Failed to fetch user ${actionType}s, but continuing with tweet data check`);
+      console.log('📋 Using provided after counts (0 API calls)');
     }
 
-    // Method 3: For likes specifically, try alternative approach
-    let foundAlternative = false;
-    if (actionType === 'like' && !foundInTweetData && !foundInUserActivity) {
-      console.log('🔄 Trying alternative like verification...');
-      
-      // Check if user's like count increased (requires previous count)
-      // This is a fallback method when direct verification fails
-      try {
-        const userCountsResponse = await getUserCounts(username);
-        const userCountsData = await userCountsResponse.json();
-        
-        if (userCountsData.success && userCountsData.counts.likes > 0) {
-          // If user has likes, assume they might have liked the tweet
-          // This is a lenient approach for when API data is incomplete
-          console.log('📊 User has likes, allowing verification to pass');
-          foundAlternative = true;
-        }
-      } catch (error) {
-        console.warn('⚠️ Alternative like verification failed:', error);
-      }
+    // Compare counts based on action type
+    let verified = false;
+    let difference = 0;
+    let countType = '';
+
+    switch (actionType) {
+      case 'like':
+        countType = 'likes';
+        difference = (currentCounts.likes || 0) - (beforeCounts.likes || 0);
+        verified = difference > 0;
+        break;
+
+      case 'retweet':
+        countType = 'retweets';
+        difference = (currentCounts.retweets || 0) - (beforeCounts.retweets || 0);
+        verified = difference > 0;
+        break;
+
+      case 'reply':
+        countType = 'replies';
+        difference = (currentCounts.replies || 0) - (beforeCounts.replies || 0);
+        verified = difference > 0;
+        break;
     }
 
-    const verified = foundInTweetData || foundInUserActivity || foundAlternative;
+    // Determine confidence level
+    let confidence: 'high' | 'medium' | 'low' = 'low';
+    if (difference === 1) {
+      confidence = 'high'; // Exactly one increase - most likely the user's action
+    } else if (difference > 1) {
+      confidence = 'medium'; // Multiple increases - user's action plus others
+    }
+
+    const message = verified
+      ? `✅ Verified: ${countType} increased by ${difference} (${beforeCounts[countType]} → ${currentCounts[countType]})`
+      : `❌ Not verified: ${countType} did not increase (${beforeCounts[countType]} → ${currentCounts[countType]})`;
+
+    console.log(message);
 
     return NextResponse.json({
       success: true,
       verified,
       action: actionType,
-      username,
       tweetId,
-      message: verified
-        ? `✅ Verified: User @${username} has ${actionType}d the tweet`
-        : `❌ Not verified: User @${username} has not ${actionType}d the tweet`,
-      methods: {
-        foundInTweetData,
-        foundInUserActivity,
-        foundAlternative
+      message,
+      counts: {
+        before: beforeCounts,
+        after: currentCounts,
+        difference,
+        countType
       },
-      service: 'twitterapi.io'
+      confidence,
+      service: 'twitterapi.io',
+      timestamp: new Date().toISOString(),
+      apiCallsUsed: afterCounts ? 0 : 1 // Track API usage
     });
 
   } catch (error) {
@@ -447,7 +329,10 @@ export async function GET() {
     userId: TWITTERAPI_IO_USER_ID || 'not_set',
     hasApiKey: !!TWITTERAPI_IO_API_KEY,
     timestamp: new Date().toISOString(),
-    supportedActions: ['getUserCounts', 'verifyLike', 'verifyRetweet', 'verifyReply'],
+    supportedActions: ['getTweetCounts', 'verifyLike', 'verifyRetweet', 'verifyReply'],
+    primaryMethod: 'tweet-engagement-counts',
+    optimization: 'api-credit-minimized',
+    cacheEnabled: true,
     deployment: 'active'
   });
 }

@@ -1,15 +1,17 @@
 # TwitterAPI.io Verification Setup
 
 ## Overview
-This application now uses **TwitterAPI.io** as the single, reliable verification method for Twitter actions (likes, retweets, replies).
+This application uses **TwitterAPI.io** for reliable Twitter action verification using **tweet engagement counts** (likes, retweets, replies).
+
+> **Current Method**: This system exclusively uses tweet engagement count comparison for verification. All other methods have been removed for simplicity and reliability.
 
 ## What is TwitterAPI.io?
 TwitterAPI.io is a professional Twitter API service that provides:
 - ✅ **Reliable Access** - Professional-grade Twitter API access
-- ✅ **Real-time Data** - Up-to-date user statistics and metrics
+- ✅ **Real-time Data** - Up-to-date tweet engagement metrics
 - ✅ **High Rate Limits** - Suitable for production applications
 - ✅ **Simple Integration** - Easy-to-use REST API
-- ✅ **Accurate Verification** - Precise count tracking for verification
+- ✅ **Accurate Verification** - Precise engagement count tracking
 
 ## Configuration
 
@@ -31,46 +33,46 @@ See `VERCEL_DEPLOYMENT.md` for detailed deployment instructions.
 ## How It Works
 
 ### Verification Process
-1. **Initialize**: Capture user's current Twitter statistics (tweets, likes, etc.)
+1. **Before**: Get tweet's current engagement counts (likes, retweets, replies)
 2. **User Action**: User completes the required Twitter action (like, retweet, reply)
-3. **Verify**: Re-fetch user statistics and compare the difference
-4. **Result**: Success if the appropriate count increased by 1 (or more)
+3. **After**: Re-fetch tweet's engagement counts
+4. **Verify**: Compare before vs after counts - success if the appropriate count increased
 
 ### API Endpoints Used
-- `GET /v1/users/by/username/{username}` - Get user profile and public metrics
+- `GET https://api.twitterapi.io/twitter/tweets?ids={tweetId}` - Get tweet engagement metrics
 
 ### Data Retrieved
 ```json
 {
-  "data": {
-    "id": "user_id",
-    "username": "username",
-    "public_metrics": {
-      "tweet_count": 1234,
-      "like_count": 5678,
-      "following_count": 100,
-      "followers_count": 500
-    }
-  }
+  "data": [{
+    "id": "tweet_id",
+    "likeCount": 42,
+    "retweetCount": 15,
+    "replyCount": 8,
+    "quoteCount": 3
+  }]
 }
 ```
 
 ## Verification Logic
 
 ### Like Verification
-- Compares `like_count` before and after user action
+- Compares tweet's `likeCount` before and after user action
 - Success: Count increased by 1 or more
-- High confidence: Exactly +1 increase
-- Medium confidence: +2 or more (user may have liked other tweets)
+- High confidence: Exactly +1 increase (most likely the user's like)
+- Medium confidence: +2 or more (user's like plus others)
 
 ### Retweet Verification
-- Compares `tweet_count` for retweets (TwitterAPI.io limitation)
-- Note: Direct retweet count not available in user metrics
-- Alternative: Could track specific tweet retweet counts
+- Compares tweet's `retweetCount` before and after user action
+- Success: Count increased by 1 or more
+- High confidence: Exactly +1 increase (most likely the user's retweet)
+- Medium confidence: +2 or more (user's retweet plus others)
 
 ### Reply Verification
-- Compares `tweet_count` before and after user action
-- Success: Count increased by 1 or more (new tweet/reply posted)
+- Compares tweet's `replyCount` before and after user action
+- Success: Count increased by 1 or more
+- High confidence: Exactly +1 increase (most likely the user's reply)
+- Medium confidence: +2 or more (user's reply plus others)
 
 ## API Health Check
 
@@ -90,13 +92,13 @@ Expected response:
 }
 ```
 
-## Testing User Lookup
+## Testing Tweet Counts
 
-Test fetching user data:
+Test fetching tweet engagement data:
 ```bash
 curl -X POST http://localhost:3000/api/twitterapi-io-proxy \
   -H "Content-Type: application/json" \
-  -d '{"username": "twitter", "action": "getUserCounts"}'
+  -d '{"action": "getTweetCounts", "tweetId": "1234567890"}'
 ```
 
 Expected response:
@@ -104,14 +106,46 @@ Expected response:
 {
   "success": true,
   "counts": {
-    "tweets": 1234,
-    "likes": 5678,
-    "retweets": 0,
-    "following": 100,
-    "followers": 500
+    "likes": 42,
+    "retweets": 15,
+    "replies": 8,
+    "quotes": 3
   },
-  "username": "twitter",
-  "userId": "783214",
+  "tweetId": "1234567890",
+  "service": "twitterapi.io",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+## Testing Verification
+
+Test like verification:
+```bash
+curl -X POST http://localhost:3000/api/twitterapi-io-proxy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "verifyLike",
+    "tweetId": "1234567890",
+    "beforeCounts": {"likes": 42, "retweets": 15, "replies": 8, "quotes": 3},
+    "afterCounts": {"likes": 43, "retweets": 15, "replies": 8, "quotes": 3}
+  }'
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "verified": true,
+  "action": "like",
+  "tweetId": "1234567890",
+  "message": "✅ Verified: likes increased by 1 (42 → 43)",
+  "counts": {
+    "before": {"likes": 42, "retweets": 15, "replies": 8, "quotes": 3},
+    "after": {"likes": 43, "retweets": 15, "replies": 8, "quotes": 3},
+    "difference": 1,
+    "countType": "likes"
+  },
+  "confidence": "high",
   "service": "twitterapi.io"
 }
 ```
@@ -150,22 +184,25 @@ The system logs:
 - Error conditions and retries
 - User actions and timing
 
-## Advantages Over Previous Systems
+## Advantages of Tweet Engagement Count Method
 
-### vs. Nitter
-- ✅ **Always Available** - No service outages
-- ✅ **Real-time Data** - No caching delays
-- ✅ **Official API** - More reliable than scraping
+### vs. User Activity Tracking
+- ✅ **Direct Measurement** - Tracks the actual tweet's engagement
+- ✅ **Real-time Updates** - Immediate count changes
+- ✅ **High Accuracy** - No false positives from unrelated activity
+- ✅ **Simple Logic** - Clear before/after comparison
 
-### vs. Web Scraping
-- ✅ **No Browser Required** - Lighter resource usage
-- ✅ **Stable Interface** - No layout change issues
-- ✅ **Higher Rate Limits** - Better for production
+### vs. User Profile Scraping
+- ✅ **Tweet-Specific** - Verifies action on the exact tweet
+- ✅ **No Rate Limits** - Doesn't require user profile access
+- ✅ **Privacy Friendly** - No need to access user's private data
+- ✅ **Reliable** - Not affected by user privacy settings
 
-### vs. Twitter Official API
-- ✅ **Pre-configured** - No setup required
-- ✅ **Cost Effective** - Professional service at reasonable rates
-- ✅ **Specialized** - Built for Twitter data access
+### vs. Activity Feed Parsing
+- ✅ **Immediate** - No waiting for activity feeds to update
+- ✅ **Precise** - Exact count differences
+- ✅ **Scalable** - Single API call per verification
+- ✅ **Consistent** - Works regardless of user's activity volume
 
 ## Production Considerations
 

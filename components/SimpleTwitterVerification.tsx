@@ -109,25 +109,46 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
       else if (job.actionType === 'retweet') apiAction = 'verifyRetweet';
       else if (job.actionType === 'comment') apiAction = 'verifyReply';
 
-      // Verify the action
-      const response = await fetch('/api/twitterapi-io-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: userTwitterHandle,
-          action: apiAction,
-          tweetId: tweetId
-        })
-      });
+      // For likes, try multiple times with delays (TwitterAPI.io can be slow to update)
+      let maxRetries = job.actionType === 'like' ? 3 : 1;
+      let verified = false;
+      let lastResult = null;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Verification failed');
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`🔍 Verification attempt ${attempt}/${maxRetries} for ${job.actionType}`);
+        
+        // Add delay between attempts (except first)
+        if (attempt > 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        // Verify the action
+        const response = await fetch('/api/twitterapi-io-proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: userTwitterHandle,
+            action: apiAction,
+            tweetId: tweetId
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Verification failed');
+        }
+
+        const result = await response.json();
+        lastResult = result;
+        console.log(`🔍 Verification attempt ${attempt} result:`, result);
+        
+        if (result.success && result.verified) {
+          verified = true;
+          break;
+        }
       }
-
-      const result = await response.json();
       
-      if (result.success && result.verified) {
+      if (verified) {
         // Complete the job
         const jobResponse = await fetch('/api/jobs/complete', {
           method: 'POST',
@@ -145,7 +166,10 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
           throw new Error(jobError.error || 'Failed to complete job');
         }
       } else {
-        throw new Error(`Please ${job.actionType} the tweet first, then try again`);
+        // Show more detailed error message
+        const errorMsg = lastResult?.message || `Please ${job.actionType} the tweet first, then try again. If you just ${job.actionType}d it, wait a moment and try again.`;
+        console.error('❌ Verification failed after all attempts:', lastResult);
+        throw new Error(errorMsg);
       }
     } catch (error) {
       console.error('Verification error:', error);
@@ -258,7 +282,7 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
             {isVerifying ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Verifying...
+                {job.actionType === 'like' ? 'Checking if you liked it...' : 'Verifying...'}
               </>
             ) : (
               <>
@@ -302,6 +326,18 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
           <p className="text-red-300 text-sm">
             {errorMessage}
           </p>
+        </div>
+
+        <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">
+          <p className="text-sm text-slate-300 mb-2">
+            <strong>Troubleshooting:</strong>
+          </p>
+          <ul className="text-sm text-slate-400 space-y-1">
+            <li>• Make sure you actually {job.actionType}d the tweet</li>
+            <li>• Wait 10-30 seconds after {job.actionType}ing, then try again</li>
+            <li>• Check that your Twitter handle is correct: @{userTwitterHandle}</li>
+            <li>• Try refreshing the page if the issue persists</li>
+          </ul>
         </div>
 
         <div className="flex gap-3">
