@@ -140,7 +140,17 @@ export function SimpleTwitterEmbed({
         console.log(`✓ TwitterAPI.io verification initialized for @${userTwitterHandle} - ${actionType} count captured`);
       } catch (error) {
         console.error('Failed to initialize verification:', error);
-        setVerificationError('Failed to initialize verification. Please try again or contact support.');
+        
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        if (errorMessage.includes('suspended')) {
+          setVerificationError('🚨 Twitter Account Issue: Your Twitter account appears to be suspended or restricted. Please ensure your account is active, or try logging in with a different Twitter account.');
+        } else if (errorMessage.includes('unavailable')) {
+          setVerificationError('⚠️ Account Unavailable: Unable to access your Twitter profile. Please check your account status and try again.');
+        } else {
+          setVerificationError('Failed to initialize verification. Please try again or contact support.');
+        }
+        
         setVerificationStatus('');
       } finally {
         setIsInitializingVerification(false);

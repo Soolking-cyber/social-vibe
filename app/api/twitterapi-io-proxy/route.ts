@@ -92,7 +92,7 @@ async function getUserCounts(username: string) {
     console.log(`🔑 Using API key: ${TWITTERAPI_IO_API_KEY ? 'SET' : 'NOT SET'}`);
 
     const userInfoResponse = await fetch(
-      `https://api.twitterapi.io/twitter/user/profile?userName=${username}`,
+      `https://api.twitterapi.io/twitter/user/last_tweets?userName=${username}&count=1`,
       {
         method: 'GET',
         headers: {
@@ -133,24 +133,33 @@ async function getUserCounts(username: string) {
     const userData = await userInfoResponse.json();
     console.log('📊 TwitterAPI.io user data:', userData);
 
-    if (!userData.data || userData.data.unavailable) {
-      const errorMsg = userData.data?.message || 'User not found';
-      console.error('❌ User unavailable:', errorMsg);
+    if (!userData.data || !Array.isArray(userData.data) || userData.data.length === 0) {
+      console.error('❌ No tweets found for user:', username);
       return NextResponse.json(
-        { error: `User unavailable: ${errorMsg}` },
+        { error: `No tweets found for user @${username}. User may not exist or have no tweets.` },
         { status: 404 }
       );
     }
 
-    const user = userData.data;
+    // Get user info from the first tweet's author data
+    const firstTweet = userData.data[0];
+    const user = firstTweet.author;
 
-    // Extract counts from user data (TwitterAPI.io format)
+    if (!user) {
+      console.error('❌ No user data found in tweets');
+      return NextResponse.json(
+        { error: 'Unable to extract user data from tweets' },
+        { status: 404 }
+      );
+    }
+
+    // Extract counts from user data (TwitterAPI.io tweets endpoint format)
     const counts = {
       tweets: user.statusesCount || user.tweetsCount || 0,
       likes: user.favouritesCount || user.likesCount || 0,
       retweets: 0, // TwitterAPI.io doesn't provide user's retweet count directly
-      following: user.followingCount || user.friendsCount || 0,
-      followers: user.followersCount || 0
+      following: user.followingCount || user.friendsCount || user.following || 0,
+      followers: user.followersCount || user.followers || 0
     };
 
     console.log('✅ Successfully fetched user counts via TwitterAPI.io:', counts);

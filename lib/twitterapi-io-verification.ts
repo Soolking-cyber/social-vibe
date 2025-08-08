@@ -191,12 +191,23 @@ export class TwitterAPIIOVerifier {
 
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Handle suspended account gracefully
+        if (errorData.error && errorData.error.includes('suspended')) {
+          throw new Error(`Twitter account suspended: Please ensure your Twitter account is active and not suspended. You may need to log in with a different Twitter account.`);
+        }
+        
         throw new Error(`TwitterAPI.io request failed: ${errorData.error || response.status}`);
       }
 
       const data = await response.json();
 
       if (!data.success) {
+        // Handle suspended account gracefully
+        if (data.error && data.error.includes('suspended')) {
+          throw new Error(`Twitter account suspended: Please ensure your Twitter account is active and not suspended. You may need to log in with a different Twitter account.`);
+        }
+        
         throw new Error(`TwitterAPI.io error: ${data.error}`);
       }
 
