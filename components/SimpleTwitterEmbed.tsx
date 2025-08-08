@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Twitter, Eye } from 'lucide-react';
-import { twitterAPIIOVerifier } from '@/lib/twitterapi-io-verification';
+
 import { useSession } from 'next-auth/react';
 
 interface SimpleTwitterEmbedProps {
@@ -20,14 +20,13 @@ export function SimpleTwitterEmbed({
   const [mounted, setMounted] = useState(false);
   const [interactionCompleted, setInteractionCompleted] = useState(false);
 
-  const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [isInitializingVerification, setIsInitializingVerification] = useState(false);
+
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<string>('');
   const [userTwitterHandle, setUserTwitterHandle] = useState<string>('');
   const [isLoadingHandle, setIsLoadingHandle] = useState(true);
   const [twitterOpenedAt, setTwitterOpenedAt] = useState<number | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState<number>(0);
+
 
   const { data: session } = useSession();
 
@@ -100,87 +99,16 @@ export function SimpleTwitterEmbed({
   // Reset verification when key props change
   useEffect(() => {
     setInteractionCompleted(false);
-    setVerificationId(null);
     setVerificationError(null);
     setVerificationStatus('');
   }, [tweetUrl, actionType]);
 
-  // Timer for countdown
-  useEffect(() => {
-    if (!twitterOpenedAt) return;
 
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - twitterOpenedAt;
-      const remaining = Math.max(0, Math.ceil((10000 - elapsed) / 1000));
-      setTimeRemaining(remaining);
-
-      if (remaining === 0) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [twitterOpenedAt]);
 
   const handleOpenTwitter = async () => {
-    // Automatically initialize TwitterAPI.io verification if Twitter handle is available
-    if (userTwitterHandle.trim() && typeof window !== 'undefined') {
-      setIsInitializingVerification(true);
-      setVerificationError(null);
-      setVerificationStatus('Initializing TwitterAPI.io verification...');
-
-      try {
-        const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
-        const hybridActionType = normalizedActionType as 'like' | 'retweet' | 'reply';
-
-        const verificationId = await twitterAPIIOVerifier.startVerification(tweetUrl, userTwitterHandle, hybridActionType);
-        setVerificationId(verificationId);
-
-        setVerificationStatus(`✓ TwitterAPI.io verification initialized for @${userTwitterHandle}`);
-        console.log(`✓ TwitterAPI.io verification initialized for @${userTwitterHandle} - ${actionType} count captured`);
-      } catch (error) {
-        console.error('Failed to initialize verification:', error);
-        
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        
-        if (errorMessage.includes('suspended')) {
-          setVerificationError('🚨 Twitter Account Issue: Your Twitter account appears to be suspended or restricted. Please ensure your account is active, or try logging in with a different Twitter account.');
-        } else if (errorMessage.includes('unavailable')) {
-          setVerificationError('⚠️ Account Unavailable: Unable to access your Twitter profile. Please check your account status and try again.');
-        } else {
-          setVerificationError('Failed to initialize verification. Please try again or contact support.');
-        }
-        
-        setVerificationStatus('');
-      } finally {
-        setIsInitializingVerification(false);
-      }
-    }
-
-    // Create the appropriate Twitter action URL for better UX
-    const tweetId = extractTweetId(tweetUrl);
-    let actionUrl = tweetUrl;
-
-    if (tweetId) {
-      switch (actionType) {
-        case 'like':
-          actionUrl = `https://twitter.com/intent/like?tweet_id=${tweetId}`;
-          break;
-        case 'retweet':
-          actionUrl = `https://twitter.com/intent/retweet?tweet_id=${tweetId}`;
-          break;
-        case 'reply':
-        case 'comment':
-          actionUrl = `https://twitter.com/intent/tweet?in_reply_to=${tweetId}`;
-          break;
-        default:
-          actionUrl = tweetUrl;
-      }
-    }
-
-    // Open Twitter with the specific action URL (client-side only)
+    // Open Twitter directly - no complex initialization
     if (typeof window !== 'undefined') {
-      window.open(actionUrl, '_blank', 'noopener,noreferrer');
+      window.open(tweetUrl, '_blank', 'noopener,noreferrer');
       setTwitterOpenedAt(Date.now());
     }
   };
@@ -192,106 +120,55 @@ export function SimpleTwitterEmbed({
   };
 
   const handleConfirmInteraction = async () => {
-    // Normalize action type once at the beginning
-    const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
-
-    console.log('🔍 VERIFICATION ATTEMPT:', {
-      userTwitterHandle,
-      verificationId,
-      actionType: normalizedActionType
-    });
-
-    // SECURITY: NO VERIFICATION WITHOUT TWITTER HANDLE - PERIOD!
+    // Simple verification - just check if user has performed the action
     if (!userTwitterHandle) {
-      console.error('❌ SECURITY BLOCK: No Twitter handle');
-      setVerificationError('🔒 Twitter handle required for verification. Please log out and log back in with Twitter to set up your handle.');
+      setVerificationError('Twitter handle required for verification.');
       return;
     }
 
-    // SECURITY: NO VERIFICATION WITHOUT VERIFICATION INITIALIZATION - PERIOD!
-    if (!verificationId) {
-      console.error('❌ SECURITY BLOCK: No verification ID');
-      setVerificationError('🔒 Please click "Open Twitter" first to initialize verification before confirming.');
-      return;
-    }
+    setVerificationError('🔍 Checking if you completed the action...');
 
-    // SECURITY: REQUIRE MINIMUM TIME DELAY (prevent instant verification)
-    const MIN_ACTION_TIME = 10000; // 10 seconds minimum
-    if (twitterOpenedAt && (Date.now() - twitterOpenedAt) < MIN_ACTION_TIME) {
-      const remainingTime = Math.ceil((MIN_ACTION_TIME - (Date.now() - twitterOpenedAt)) / 1000);
-      console.error('❌ SECURITY BLOCK: Too fast verification attempt');
-      setVerificationError(`🔒 Please wait ${remainingTime} more seconds before verifying. This ensures you had time to complete the action.`);
-      return;
-    }
-
-    // Add loading state
-    setVerificationError('🔍 Verifying your action...');
-
-    // USE ENHANCED TWITTERAPI.IO VERIFICATION SYSTEM
     try {
-      console.log(`🔍 Starting enhanced TwitterAPI.io verification for ID:`, verificationId);
-      
-      // First try the count-based verification (existing method)
-      const countResult = await twitterAPIIOVerifier.verifyCompletion(verificationId);
-      console.log('🔍 Count-based verification result:', countResult);
-
-      // If count-based verification succeeds, we're done
-      if (countResult.success) {
-        console.log('✅ COUNT VERIFICATION SUCCESS:', countResult.details);
-        setVerificationError(null);
-        setVerificationStatus(`✅ Verified via TwitterAPI.io (count increase detected)`);
-        setInteractionCompleted(true);
-        onInteraction?.(actionType);
+      const tweetId = extractTweetId(tweetUrl);
+      if (!tweetId) {
+        setVerificationError('Invalid tweet URL');
         return;
       }
 
-      // If count-based fails, try direct tweet interaction verification
-      const tweetId = extractTweetId(tweetUrl);
-      if (tweetId && (actionType === 'like' || actionType === 'retweet' || actionType === 'reply' || actionType === 'comment')) {
-        console.log(`🔍 Trying direct tweet interaction verification for ${actionType}...`);
-        
-        // Map action types to API actions
-        let apiAction = '';
-        if (actionType === 'like') apiAction = 'verifyLike';
-        else if (actionType === 'retweet') apiAction = 'verifyRetweet';
-        else if (actionType === 'reply' || actionType === 'comment') apiAction = 'verifyReply';
-        
-        const directVerificationResponse = await fetch('/api/twitterapi-io-proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: userTwitterHandle,
-            action: apiAction,
-            tweetId: tweetId
-          })
-        });
+      // Map action types to API actions
+      let apiAction = '';
+      if (actionType === 'like') apiAction = 'verifyLike';
+      else if (actionType === 'retweet') apiAction = 'verifyRetweet';
+      else if (actionType === 'reply' || actionType === 'comment') apiAction = 'verifyReply';
 
-        if (directVerificationResponse.ok) {
-          const directResult = await directVerificationResponse.json();
-          console.log('🔍 Direct verification result:', directResult);
+      const response = await fetch('/api/twitterapi-io-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: userTwitterHandle,
+          action: apiAction,
+          tweetId: tweetId
+        })
+      });
 
-          if (directResult.success && directResult.verified) {
-            console.log('✅ DIRECT VERIFICATION SUCCESS:', directResult.message);
-            setVerificationError(null);
-            setVerificationStatus(`✅ Verified via TwitterAPI.io (direct tweet check)`);
-            setInteractionCompleted(true);
-            onInteraction?.(actionType);
-            return;
-          }
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.success && result.verified) {
+          setVerificationError(null);
+          setVerificationStatus(`✅ Verified: You ${actionType}d the tweet!`);
+          setInteractionCompleted(true);
+          onInteraction?.(actionType);
+        } else {
+          setVerificationError(`❌ Not verified: Please ${actionType} the tweet first, then try again.`);
         }
+      } else {
+        const errorData = await response.json();
+        setVerificationError(`Error: ${errorData.error || 'Verification failed'}`);
       }
-
-      // Both verification methods failed
-      console.error('❌ ALL VERIFICATION METHODS FAILED');
-      setVerificationError(`🔒 Verification failed: Could not confirm your ${actionType} action. Please ensure you completed the action on Twitter and try again.`);
-      setVerificationStatus('');
-      return;
-
     } catch (error) {
-      console.error('❌ VERIFICATION ERROR:', error);
-      setVerificationError('🔒 Verification error. TwitterAPI.io service may be unavailable. Please try again or contact support.');
-      setVerificationStatus('');
-      return;
+      console.error('Verification error:', error);
+      setVerificationError('Verification service unavailable. Please try again.');
     }
   };
 
@@ -440,16 +317,10 @@ export function SimpleTwitterEmbed({
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   Loading...
                 </>
-              ) : isInitializingVerification ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Initializing verification...
-                </>
               ) : (
                 <>
                   <ExternalLink className="h-4 w-4 mr-2" />
-                  Open Twitter & {actionLabels[actionType]}
-                  {userTwitterHandle && ' (Auto-verify)'}
+                  Open Tweet & {actionLabels[actionType]}
                 </>
               )}
             </Button>
@@ -457,25 +328,17 @@ export function SimpleTwitterEmbed({
             <Button
               onClick={handleConfirmInteraction}
               variant="outline"
-              disabled={!userTwitterHandle || !verificationId || timeRemaining > 0}
+              disabled={!userTwitterHandle}
               className="w-full border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
             >
               {!userTwitterHandle ? (
                 <>
-                  🔒 Twitter handle required for verification
-                </>
-              ) : !verificationId ? (
-                <>
-                  🔒 Click "Open Twitter" first to verify
-                </>
-              ) : timeRemaining > 0 ? (
-                <>
-                  ⏳ Wait {timeRemaining}s to verify
+                  🔒 Twitter handle required
                 </>
               ) : (
                 <>
                   <Eye className="h-4 w-4 mr-2" />
-                  Verify {actionLabels[actionType]} (TwitterAPI.io)
+                  Check if I {actionType}d it
                 </>
               )}
             </Button>
@@ -500,19 +363,18 @@ export function SimpleTwitterEmbed({
           </p>
           <ol className="text-slate-400 text-xs mt-1 space-y-1">
             <li>1. Your Twitter handle: @{userTwitterHandle || 'Required'}</li>
-            <li>2. Click "Open Twitter" - opens direct {actionType} action</li>
-            <li>3. Complete the {actionType} on Twitter (one click!)</li>
-            <li>4. Return and verify - we check multiple ways</li>
+            <li>2. Click "Open Tweet" to go to the tweet</li>
+            <li>3. {actionLabels[actionType]} the tweet</li>
+            <li>4. Return and click "Check if I {actionType}d it"</li>
           </ol>
           <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700 rounded">
             <p className="text-blue-300 text-xs">
-              <strong>🚀 Dual Verification:</strong>
+              <strong>🔍 Simple Verification:</strong>
             </p>
             <ul className="text-blue-200 text-xs mt-1 space-y-1">
-              <li>• Count increase detection (fast)</li>
-              <li>• Direct tweet interaction check (reliable)</li>
-              <li>• Reply detection for comments</li>
-              <li>• Professional TwitterAPI.io service</li>
+              <li>• We check if you {actionType}d the tweet</li>
+              <li>• Uses TwitterAPI.io to verify your action</li>
+              <li>• No complex setup required</li>
             </ul>
           </div>
         </div>

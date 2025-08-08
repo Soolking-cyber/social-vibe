@@ -35,7 +35,9 @@ export class TwitterAPIIOVerifier {
 
     try {
       // Get initial counts from TwitterAPI.io
+      console.log(`🔍 Getting initial counts for @${userTwitterHandle}...`);
       const initialCounts = await this.getUserCounts(userTwitterHandle);
+      console.log(`📊 Initial counts:`, initialCounts);
 
       const session: TwitterAPIIOVerificationSession = {
         id: verificationId,
