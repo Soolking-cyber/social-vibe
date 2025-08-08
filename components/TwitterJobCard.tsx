@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Twitter, Heart, Repeat, MessageCircle, DollarSign } from 'lucide-react';
-import { EmbeddedVerificationDialog } from './EmbeddedVerificationDialog';
+import { SimpleTwitterVerification } from './SimpleTwitterVerification';
 
 interface TwitterJob {
   id: string;
@@ -104,33 +104,35 @@ export function TwitterJobCard({ job, onJobCompleted }: TwitterJobCardProps) {
             </div>
           </div>
 
-          {/* Action Button */}
-          <Button
-            onClick={() => setShowVerification(true)}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3"
-          >
-            <ActionIcon className="h-4 w-4 mr-2" />
-            Start {job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)} Job
-          </Button>
+          {/* Action Button or Verification */}
+          {!showVerification ? (
+            <Button
+              onClick={() => setShowVerification(true)}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3"
+            >
+              <ActionIcon className="h-4 w-4 mr-2" />
+              Complete {job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)} Job
+            </Button>
+          ) : (
+            <SimpleTwitterVerification
+              job={job}
+              onVerified={() => {
+                onJobCompleted(job.id);
+                setShowVerification(false);
+              }}
+              onCancel={() => setShowVerification(false)}
+            />
+          )}
 
           {/* Additional Info */}
-          <div className="flex justify-between items-center text-xs text-slate-500">
-            <span>Embedded verification • No API costs</span>
-            <span>Instant USDC payout</span>
-          </div>
+          {!showVerification && (
+            <div className="flex justify-between items-center text-xs text-slate-500">
+              <span>Direct verification • No popups</span>
+              <span>Instant USDC payout</span>
+            </div>
+          )}
         </CardContent>
       </Card>
-
-      {/* Embedded Verification Dialog */}
-      <EmbeddedVerificationDialog
-        isOpen={showVerification}
-        onClose={() => setShowVerification(false)}
-        onVerified={() => {
-          onJobCompleted(job.id);
-          setShowVerification(false);
-        }}
-        job={job}
-      />
     </>
   );
 }

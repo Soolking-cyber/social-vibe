@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserDashboard from '../../components/UserDashboard';
-import { EmbeddedVerificationDialog } from '../../components/EmbeddedVerificationDialog';
+import { SimpleTwitterVerification } from '../../components/SimpleTwitterVerification';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,7 @@ export default function Marketplace() {
     const [completingJobs, setCompletingJobs] = useState<Set<number>>(new Set());
     const [verifyingJobs, setVerifyingJobs] = useState<Set<number>>(new Set());
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
-    const [popupJob, setPopupJob] = useState<Job | null>(null);
+    const [verificationJob, setVerificationJob] = useState<Job | null>(null);
 
 
     // Helper function to normalize action types
@@ -355,30 +355,54 @@ export default function Marketplace() {
                                             ) : (
                                                 // Job not completed - show action buttons
                                                 <>
-                                                    <Button
-                                                        onClick={() => setPopupJob(job)}
-                                                        disabled={completingJobs.has(job.id) || verifyingJobs.has(job.id)}
-                                                        className="w-full bg-blue-600 hover:bg-blue-700"
-                                                    >
-                                                        {completingJobs.has(job.id) ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                                Loading...
-                                                            </div>
-                                                        ) : verifyingJobs.has(job.id) ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                                Verifying...
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                                </svg>
-                                                                🐦 Complete {job.actionType} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
-                                                            </>
-                                                        )}
-                                                    </Button>
+                                                    {verificationJob?.id === job.id ? (
+                                                        <SimpleTwitterVerification
+                                                            job={{
+                                                                id: job.id.toString(),
+                                                                actionType: job.actionType,
+                                                                targetUrl: job.tweetUrl,
+                                                                reward: parseFloat(job.pricePerAction).toFixed(3)
+                                                            }}
+                                                            onVerified={() => {
+                                                                // Update the specific job to show as completed
+                                                                setJobs(prevJobs =>
+                                                                    prevJobs.map(j =>
+                                                                        j.id === job.id
+                                                                            ? { ...j, hasUserCompleted: true, canComplete: false }
+                                                                            : j
+                                                                    )
+                                                                );
+                                                                setVerificationJob(null);
+                                                                refreshBalances();
+                                                            }}
+                                                            onCancel={() => setVerificationJob(null)}
+                                                        />
+                                                    ) : (
+                                                        <Button
+                                                            onClick={() => setVerificationJob(job)}
+                                                            disabled={completingJobs.has(job.id) || verifyingJobs.has(job.id)}
+                                                            className="w-full bg-blue-600 hover:bg-blue-700"
+                                                        >
+                                                            {completingJobs.has(job.id) ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                    Loading...
+                                                                </div>
+                                                            ) : verifyingJobs.has(job.id) ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                    Verifying...
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                    </svg>
+                                                                    🐦 Complete {job.actionType} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    )}
                                                 </>
                                             )}
                                         </div>
@@ -406,30 +430,7 @@ export default function Marketplace() {
                 )}
             </div>
 
-            {/* Embedded Verification Dialog */}
-            {popupJob && (
-                <EmbeddedVerificationDialog
-                    isOpen={!!popupJob}
-                    onClose={() => setPopupJob(null)}
-                    onVerified={() => {
-                        // Update the specific job to show as completed
-                        setJobs(prevJobs =>
-                            prevJobs.map(job =>
-                                job.id === popupJob.id
-                                    ? { ...job, hasUserCompleted: true, canComplete: false }
-                                    : job
-                            )
-                        );
-                        setPopupJob(null);
-                    }}
-                    job={{
-                        id: popupJob.id.toString(),
-                        actionType: popupJob.actionType,
-                        targetUrl: popupJob.tweetUrl,
-                        reward: parseFloat(popupJob.pricePerAction).toFixed(3)
-                    }}
-                />
-            )}
+            {/* No more popups - verification is now inline! */}
         </div>
     );
 }

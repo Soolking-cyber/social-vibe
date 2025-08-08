@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { TwitterJobsMarketplace } from '@/components/TwitterJobCard';
-import { EmbeddedVerificationDialog } from '@/components/EmbeddedVerificationDialog';
+// Removed old popup-based verification - now using popup-free system
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -110,13 +110,9 @@ export default function WidgetDemoPage() {
                     <p className="text-slate-400 text-sm">Earn 0.05 USDC for liking</p>
                   </div>
                 </div>
-                <Button
-                  onClick={() => setShowDemo(true)}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                >
-                  <Twitter className="h-4 w-4 mr-2" />
-                  Start Demo Verification
-                </Button>
+                <p className="text-slate-400 text-sm">
+                  Demo is available in the marketplace below - no popups, direct verification!
+                </p>
               </div>
 
               <div className="text-xs text-slate-500">
@@ -218,17 +214,7 @@ export default function WidgetDemoPage() {
         </Card>
       </div>
 
-      {/* Demo Dialog */}
-      <EmbeddedVerificationDialog
-        isOpen={showDemo}
-        onClose={() => setShowDemo(false)}
-        onVerified={() => {
-          setShowDemo(false);
-          // Show success message
-          alert('Demo completed! In a real app, you would earn USDC.');
-        }}
-        job={demoJob}
-      />
+      {/* Demo now uses popup-free verification in TwitterJobsMarketplace */}
     </div>
   );
 }
