@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { createClient } from '@supabase/supabase-js';
 import { authOptions } from '@/auth';
 import { jobValidator } from '@/lib/job-validation';
-import { twitterVerificationService } from '@/lib/twitter-api';
+import { twitterAPIIOVerifier } from '@/lib/twitterapi-io-verification';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -123,67 +123,125 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ No existing completion found - user can complete this job`);
 
-    // Verify Twitter action completion
-    console.log(`=== VERIFYING TWITTER ACTION ===`);
+    // Verify Twitter action completion using TwitterAPI.io
+    console.log(`=== VERIFYING TWITTER ACTION WITH TWITTERAPI.IO ===`);
     console.log(`Action type: ${job.actionType}`);
     console.log(`Tweet URL: ${job.tweetUrl}`);
     console.log(`User display name: ${user.name}`);
     console.log(`User Twitter handle: ${user.twitter_handle}`);
 
-    // Always use bypass mode in production to avoid Twitter API rate limits
-    console.log('🚀 PRODUCTION MODE: Using Twitter verification bypass to avoid rate limits');
+    // Use TwitterAPI.io for real verification
+    console.log('🚀 PRODUCTION MODE: Using TwitterAPI.io for reliable verification');
 
-    {
-      try {
-        // Use securely stored Twitter handle from database
-        const twitterUsername = user.twitter_handle;
+    try {
+      // Use securely stored Twitter handle from database
+      const twitterUsername = user.twitter_handle;
 
-        if (!twitterUsername) {
-          return NextResponse.json({
-            error: 'No Twitter handle found in your profile. Please ensure your Twitter account is properly linked during login.'
-          }, { status: 400 });
-        }
-
-        console.log(`✅ Using securely stored Twitter handle: ${twitterUsername}`);
-
-        // Generate consistent user ID from stored handle (no API calls)
-        const userTwitterId = await twitterVerificationService.getUserIdByUsername(twitterUsername);
-
-        if (!userTwitterId) {
-          return NextResponse.json({
-            error: 'Failed to generate Twitter ID from handle. Please check your Twitter handle in your profile.'
-          }, { status: 400 });
-        }
-
-        console.log(`✅ Generated consistent Twitter ID: ${userTwitterId}`);
-
-        // Verify the action was completed (using bypass mode)
-        console.log(`🔍 Starting verification process (bypass mode)...`);
-        console.log(`Tweet URL: ${job.tweetUrl}`);
-        console.log(`Action Type: ${job.actionType}`);
-        console.log(`User Twitter ID: ${userTwitterId}`);
-
-        try {
-          const isVerified = await twitterVerificationService.verifyJobCompletion(
-            job.tweetUrl,
-            userTwitterId,
-            job.actionType,
-            job.commentText
-          );
-
-          console.log(`Verification result: ${isVerified}`);
-          console.log(`✅ Twitter action verification completed (bypass mode)`);
-        } catch (verificationError) {
-          console.error('Verification process error:', verificationError);
-          // In bypass mode, we continue even if there are errors
-          console.log(`⚠️ Verification had errors but continuing in bypass mode`);
-        }
-
-      } catch (verificationError) {
-        console.error('Twitter verification process failed:', verificationError);
-        // In bypass mode, we log the error but continue with job completion
-        console.log(`⚠️ Verification process failed but continuing in bypass mode`);
+      if (!twitterUsername) {
+        return NextResponse.json({
+          error: 'No Twitter handle found in your profile. Please ensure your Twitter account is properly linked during login.'
+        }, { status: 400 });
       }
+
+      console.log(`✅ Using securely stored Twitter handle: ${twitterUsername}`);
+
+      // Extract tweet ID for direct verification
+      const tweetId = job.tweetUrl.match(/status\/(\d+)/)?.[1];
+      if (!tweetId) {
+        return NextResponse.json({
+          error: 'Invalid tweet URL format'
+        }, { status: 400 });
+      }
+
+      console.log(`✅ Extracted tweet ID: ${tweetId}`);
+
+      // Perform dual verification using TwitterAPI.io
+      console.log(`🔍 Starting TwitterAPI.io verification...`);
+      
+      let verificationPassed = false;
+      let verificationMethod = '';
+
+      // Method 1: Try count-based verification first
+      try {
+        console.log(`🔍 Attempting count-based verification...`);
+        
+        // For server-side verification, we need to create a temporary verification session
+        const normalizedActionType = job.actionType === 'comment' ? 'reply' : job.actionType;
+        const verificationId = await twitterAPIIOVerifier.startVerification(
+          job.tweetUrl, 
+          twitterUsername, 
+          normalizedActionType as 'like' | 'retweet' | 'reply'
+        );
+
+        // Wait a moment for the initial counts to be captured
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const countResult = await twitterAPIIOVerifier.verifyCompletion(verificationId);
+        
+        if (countResult.success) {
+          verificationPassed = true;
+          verificationMethod = 'count_increase';
+          console.log(`✅ Count-based verification succeeded: ${countResult.details}`);
+        }
+      } catch (countError) {
+        console.log(`⚠️ Count-based verification failed:`, countError);
+      }
+
+      // Method 2: If count-based fails, try direct interaction verification
+      if (!verificationPassed) {
+        console.log(`🔍 Attempting direct interaction verification...`);
+        
+        try {
+          // Map action types to API actions
+          let apiAction = '';
+          if (job.actionType === 'like') apiAction = 'verifyLike';
+          else if (job.actionType === 'retweet') apiAction = 'verifyRetweet';
+          else if (job.actionType === 'comment') apiAction = 'verifyReply';
+          
+          if (apiAction) {
+            // Make direct API call to our proxy
+            const directVerificationResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: twitterUsername,
+                action: apiAction,
+                tweetId: tweetId
+              })
+            });
+
+            if (directVerificationResponse.ok) {
+              const directResult = await directVerificationResponse.json();
+              
+              if (directResult.success && directResult.verified) {
+                verificationPassed = true;
+                verificationMethod = 'direct_interaction';
+                console.log(`✅ Direct interaction verification succeeded: ${directResult.message}`);
+              }
+            }
+          }
+        } catch (directError) {
+          console.log(`⚠️ Direct interaction verification failed:`, directError);
+        }
+      }
+
+      // Final verification check
+      if (!verificationPassed) {
+        console.log(`❌ All verification methods failed`);
+        return NextResponse.json({
+          error: `Could not verify your ${job.actionType} action. Please ensure you completed the action on Twitter and try again.`,
+          details: 'TwitterAPI.io verification failed for both count increase and direct interaction methods.'
+        }, { status: 400 });
+      }
+
+      console.log(`✅ Twitter action verification completed via ${verificationMethod}`);
+
+    } catch (verificationError) {
+      console.error('Twitter verification process failed:', verificationError);
+      return NextResponse.json({
+        error: 'Verification service temporarily unavailable. Please try again later.',
+        details: verificationError instanceof Error ? verificationError.message : 'Unknown error'
+      }, { status: 500 });
     }
 
     // Calculate reward amount

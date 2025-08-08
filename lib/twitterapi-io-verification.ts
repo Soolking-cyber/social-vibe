@@ -200,6 +200,11 @@ export class TwitterAPIIOVerifier {
         throw new Error(`TwitterAPI.io error: ${data.error}`);
       }
 
+      // SECURITY: Ensure we have valid count data
+      if (!data.counts || typeof data.counts.tweets === 'undefined') {
+        throw new Error('TwitterAPI.io returned invalid count data');
+      }
+
       return {
         tweets: data.counts.tweets || 0,
         likes: data.counts.likes || 0,

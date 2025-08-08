@@ -147,11 +147,38 @@ export function SimpleTwitterEmbed({
       }
     }
 
-    // Open Twitter in a new tab (client-side only)
+    // Create the appropriate Twitter action URL for better UX
+    const tweetId = extractTweetId(tweetUrl);
+    let actionUrl = tweetUrl;
+
+    if (tweetId) {
+      switch (actionType) {
+        case 'like':
+          actionUrl = `https://twitter.com/intent/like?tweet_id=${tweetId}`;
+          break;
+        case 'retweet':
+          actionUrl = `https://twitter.com/intent/retweet?tweet_id=${tweetId}`;
+          break;
+        case 'reply':
+        case 'comment':
+          actionUrl = `https://twitter.com/intent/tweet?in_reply_to=${tweetId}`;
+          break;
+        default:
+          actionUrl = tweetUrl;
+      }
+    }
+
+    // Open Twitter with the specific action URL (client-side only)
     if (typeof window !== 'undefined') {
-      window.open(tweetUrl, '_blank', 'noopener,noreferrer');
+      window.open(actionUrl, '_blank', 'noopener,noreferrer');
       setTwitterOpenedAt(Date.now());
     }
+  };
+
+  // Helper function to extract tweet ID from URL
+  const extractTweetId = (url: string): string | null => {
+    const match = url.match(/status\/(\d+)/);
+    return match ? match[1] : null;
   };
 
   const handleConfirmInteraction = async () => {
@@ -190,30 +217,69 @@ export function SimpleTwitterEmbed({
     // Add loading state
     setVerificationError('🔍 Verifying your action...');
 
-    // USE TWITTERAPI.IO VERIFICATION SYSTEM
+    // USE ENHANCED TWITTERAPI.IO VERIFICATION SYSTEM
     try {
-      console.log(`🔍 Starting TwitterAPI.io verification for ID:`, verificationId);
-      const result = await twitterAPIIOVerifier.verifyCompletion(verificationId);
+      console.log(`🔍 Starting enhanced TwitterAPI.io verification for ID:`, verificationId);
+      
+      // First try the count-based verification (existing method)
+      const countResult = await twitterAPIIOVerifier.verifyCompletion(verificationId);
+      console.log('🔍 Count-based verification result:', countResult);
 
-      console.log('🔍 TwitterAPI.io verification result:', result);
-
-      if (result.success) {
-        console.log('✅ VERIFICATION SUCCESS:', result.details);
-
+      // If count-based verification succeeds, we're done
+      if (countResult.success) {
+        console.log('✅ COUNT VERIFICATION SUCCESS:', countResult.details);
         setVerificationError(null);
-        setVerificationStatus(`✅ Verified via TwitterAPI.io`);
+        setVerificationStatus(`✅ Verified via TwitterAPI.io (count increase detected)`);
         setInteractionCompleted(true);
         onInteraction?.(actionType);
         return;
-      } else {
-        console.error('❌ VERIFICATION FAILED:', result);
-        setVerificationError(`🔒 Verification failed: ${result.details}. You must actually complete the ${actionType} action on Twitter.`);
-        setVerificationStatus('');
-        return;
       }
+
+      // If count-based fails, try direct tweet interaction verification
+      const tweetId = extractTweetId(tweetUrl);
+      if (tweetId && (actionType === 'like' || actionType === 'retweet' || actionType === 'reply' || actionType === 'comment')) {
+        console.log(`🔍 Trying direct tweet interaction verification for ${actionType}...`);
+        
+        // Map action types to API actions
+        let apiAction = '';
+        if (actionType === 'like') apiAction = 'verifyLike';
+        else if (actionType === 'retweet') apiAction = 'verifyRetweet';
+        else if (actionType === 'reply' || actionType === 'comment') apiAction = 'verifyReply';
+        
+        const directVerificationResponse = await fetch('/api/twitterapi-io-proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: userTwitterHandle,
+            action: apiAction,
+            tweetId: tweetId
+          })
+        });
+
+        if (directVerificationResponse.ok) {
+          const directResult = await directVerificationResponse.json();
+          console.log('🔍 Direct verification result:', directResult);
+
+          if (directResult.success && directResult.verified) {
+            console.log('✅ DIRECT VERIFICATION SUCCESS:', directResult.message);
+            setVerificationError(null);
+            setVerificationStatus(`✅ Verified via TwitterAPI.io (direct tweet check)`);
+            setInteractionCompleted(true);
+            onInteraction?.(actionType);
+            return;
+          }
+        }
+      }
+
+      // Both verification methods failed
+      console.error('❌ ALL VERIFICATION METHODS FAILED');
+      setVerificationError(`🔒 Verification failed: Could not confirm your ${actionType} action. Please ensure you completed the action on Twitter and try again.`);
+      setVerificationStatus('');
+      return;
+
     } catch (error) {
       console.error('❌ VERIFICATION ERROR:', error);
-      setVerificationError('🔒 Verification error. Please try again or contact support.');
+      setVerificationError('🔒 Verification error. TwitterAPI.io service may be unavailable. Please try again or contact support.');
       setVerificationStatus('');
       return;
     }
@@ -420,17 +486,25 @@ export function SimpleTwitterEmbed({
       <div className="mt-4 p-3 bg-slate-800/30 border border-slate-700 rounded-lg">
         <div>
           <p className="text-slate-400 text-xs">
-            <strong>🔒 TwitterAPI.io Verification Process:</strong>
+            <strong>🔒 Enhanced TwitterAPI.io Verification:</strong>
           </p>
           <ol className="text-slate-400 text-xs mt-1 space-y-1">
-            <li>1. Twitter handle must be detected from your login</li>
-            <li>2. Click "Open Twitter" to initialize TwitterAPI.io verification</li>
-            <li>3. Complete the {actionType} action on Twitter</li>
-            <li>4. Return and click "Verify" to confirm the count increased</li>
+            <li>1. Your Twitter handle: @{userTwitterHandle || 'Required'}</li>
+            <li>2. Click "Open Twitter" - opens direct {actionType} action</li>
+            <li>3. Complete the {actionType} on Twitter (one click!)</li>
+            <li>4. Return and verify - we check multiple ways</li>
           </ol>
-          <p className="text-blue-300 text-xs mt-2">
-            💡 <strong>Professional API:</strong> Uses TwitterAPI.io for reliable, accurate verification
-          </p>
+          <div className="mt-2 p-2 bg-blue-900/20 border border-blue-700 rounded">
+            <p className="text-blue-300 text-xs">
+              <strong>🚀 Dual Verification:</strong>
+            </p>
+            <ul className="text-blue-200 text-xs mt-1 space-y-1">
+              <li>• Count increase detection (fast)</li>
+              <li>• Direct tweet interaction check (reliable)</li>
+              <li>• Reply detection for comments</li>
+              <li>• Professional TwitterAPI.io service</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

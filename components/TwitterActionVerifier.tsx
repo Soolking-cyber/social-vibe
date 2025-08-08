@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Twitter, Sparkles, AlertTriangle } from 'lucide-react';
-import { simpleVerifier, SimpleVerificationResult } from '@/lib/simple-verification';
-import { browserVerifier } from '@/lib/browser-verification';
+import { twitterAPIIOVerifier, TwitterAPIIOVerificationResult } from '@/lib/twitterapi-io-verification';
 import { VerificationStatus } from './VerificationStatus';
 
 interface TwitterActionVerifierProps {
@@ -29,9 +28,9 @@ export function TwitterActionVerifier({
 }: TwitterActionVerifierProps) {
   const [step, setStep] = useState<'ready' | 'completed' | 'verified' | 'failed'>('ready');
   const [isVerifying, setIsVerifying] = useState(false);
-  const [popupWindow, setPopupWindow] = useState<Window | null>(null);
+
   const [verificationId, setVerificationId] = useState<string | null>(null);
-  const [verificationResult, setVerificationResult] = useState<SimpleVerificationResult | null>(null);
+  const [verificationResult, setVerificationResult] = useState<TwitterAPIIOVerificationResult | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
 
   const extractTweetId = (url: string): string => {
@@ -55,80 +54,48 @@ export function TwitterActionVerifier({
     }
   };
 
-  const handleCompleteAction = () => {
+  const handleCompleteAction = async () => {
     const url = getActionUrl();
 
-    // Start simple verification (works on all platforms)
-    const verifyId = simpleVerifier.startVerification(actionType, tweetUrl);
-    setVerificationId(verifyId);
-    setStartTime(Date.now());
+    // For TwitterAPI.io verification, we need a Twitter handle
+    // This component should be updated to get the Twitter handle from session/API
+    // For now, we'll use a placeholder approach
 
-    // IMMEDIATELY change to completed state when button is clicked
-    setStep('completed');
+    try {
+      // Get Twitter handle from API
+      const response = await fetch('/api/user/twitter-handle');
+      const data = await response.json();
 
-    // Open Twitter - works universally on all platforms
-    window.open(url, '_blank');
+      if (!data.twitterHandle) {
+        alert('Twitter handle required for verification. Please ensure you\'re logged in with Twitter.');
+        return;
+      }
+
+      // Start TwitterAPI.io verification
+      const normalizedActionType = actionType === 'comment' ? 'reply' : actionType;
+      const verifyId = await twitterAPIIOVerifier.startVerification(
+        tweetUrl,
+        data.twitterHandle,
+        normalizedActionType as 'like' | 'retweet' | 'reply'
+      );
+
+      setVerificationId(verifyId);
+      setStartTime(Date.now());
+
+      // IMMEDIATELY change to completed state when button is clicked
+      setStep('completed');
+
+      // Open Twitter - works universally on all platforms
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('Failed to start verification:', error);
+      alert('Failed to initialize verification. Please try again.');
+    }
   };
 
-  const handleVerifyAction = () => {
-    // Store current verification ID for the Twitter tab to access
-    if (verificationId) {
-      localStorage.setItem('current_verification_id', verificationId);
-    }
-
-    // Open Twitter again to check if the action was completed
-    const tweetId = extractTweetId(tweetUrl);
-    const verifyUrl = `https://twitter.com/status/${tweetId}?verification_id=${verificationId || ''}`;
-
-    // Open Twitter to verify the action
-    const verifyPopup = window.open(
-      verifyUrl,
-      'twitter-verify',
-      'width=500,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,directories=no,status=no,left=' +
-      (window.screen.width / 2 - 250) + ',top=' + (window.screen.height / 2 - 300)
-    );
-
-    if (verifyPopup) {
-      setPopupWindow(verifyPopup);
-      setIsVerifying(true);
-
-      // Listen for verification messages from the Twitter tab
-      const handleVerificationMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'twitter_action_completed' &&
-          event.data?.verificationId === verificationId &&
-          event.data?.verified === true) {
-          // Action was verified! Mark it in our system
-          if (verificationId) {
-            browserVerifier.markActionAsVerified(verificationId);
-          }
-          window.removeEventListener('message', handleVerificationMessage);
-        }
-      };
-
-      window.addEventListener('message', handleVerificationMessage);
-
-      // Monitor popup for closure and automatically verify
-      const checkClosed = setInterval(() => {
-        if (verifyPopup.closed) {
-          clearInterval(checkClosed);
-          window.removeEventListener('message', handleVerificationMessage);
-
-          // Wait a moment for any final verification messages
-          setTimeout(() => {
-            handleVerify();
-          }, 1000);
-        }
-      }, 1000);
-    } else {
-      // Fallback: open in new tab
-      window.open(verifyUrl, '_blank');
-      setIsVerifying(true);
-
-      // For new tab, we'll need to rely on manual verification
-      setTimeout(() => {
-        handleVerify();
-      }, 5000); // Give user time to complete action
-    }
+  const handleVerifyAction = async () => {
+    // Simplified verification - just call the verification directly
+    await handleVerify();
   };
 
   const handleVerify = async () => {
@@ -140,37 +107,100 @@ export function TwitterActionVerifier({
     setIsVerifying(true);
 
     try {
-      // First try enhanced verification (includes time analysis)
-      const result = await browserVerifier.enhancedVerification(verificationId);
+      // Get Twitter handle for enhanced verification
+      const handleResponse = await fetch('/api/user/twitter-handle');
+      const handleData = await handleResponse.json();
 
-      // Convert VerificationResult to SimpleVerificationResult to match state type
-      const simpleResult: SimpleVerificationResult = {
-        success: result.success,
-        confidence: result.confidence,
-        method: result.method,
-        details: result.details || 'No additional details available'
-      };
+      if (!handleData.twitterHandle) {
+        setStep('failed');
+        setVerificationResult({
+          success: false,
+          confidence: 'low',
+          method: 'no_twitter_handle',
+          details: 'Twitter handle required for verification'
+        });
+        return;
+      }
 
-      setVerificationResult(simpleResult);
+      console.log(`🔍 Starting enhanced TwitterAPI.io verification...`);
 
-      if (result.success && result.confidence === 'high') {
-        // High confidence automatic verification
+      // First try the count-based verification (existing method)
+      const countResult = await twitterAPIIOVerifier.verifyCompletion(verificationId);
+      console.log('🔍 Count-based verification result:', countResult);
+
+      // If count-based verification succeeds, we're done
+      if (countResult.success) {
+        console.log('✅ COUNT VERIFICATION SUCCESS:', countResult.details);
+        setVerificationResult(countResult);
         setStep('verified');
         setTimeout(() => {
           onVerified();
         }, 1500);
-      } else if (result.success && result.confidence === 'medium') {
-        // Medium confidence - show result but still proceed
-        setStep('verified');
-        setTimeout(() => {
-          onVerified();
-        }, 2000);
-      } else {
-        // Low confidence or failed - show failed state
-        setStep('failed');
+        return;
       }
+
+      // If count-based fails, try direct tweet interaction verification
+      const tweetId = extractTweetId(tweetUrl);
+      if (tweetId) {
+        console.log(`🔍 Trying direct tweet interaction verification for ${actionType}...`);
+
+        // Map action types to API actions
+        let apiAction = '';
+        if (actionType === 'like') apiAction = 'verifyLike';
+        else if (actionType === 'retweet') apiAction = 'verifyRetweet';
+        else if (actionType === 'comment') apiAction = 'verifyReply';
+
+        if (apiAction) {
+          const directVerificationResponse = await fetch('/api/twitterapi-io-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: handleData.twitterHandle,
+              action: apiAction,
+              tweetId: tweetId
+            })
+          });
+
+          if (directVerificationResponse.ok) {
+            const directResult = await directVerificationResponse.json();
+            console.log('🔍 Direct verification result:', directResult);
+
+            if (directResult.success && directResult.verified) {
+              console.log('✅ DIRECT VERIFICATION SUCCESS:', directResult.message);
+              setVerificationResult({
+                success: true,
+                confidence: 'high',
+                method: 'direct_tweet_check',
+                details: directResult.message
+              });
+              setStep('verified');
+              setTimeout(() => {
+                onVerified();
+              }, 1500);
+              return;
+            }
+          }
+        }
+      }
+
+      // Both verification methods failed
+      console.error('❌ ALL VERIFICATION METHODS FAILED');
+      setVerificationResult({
+        success: false,
+        confidence: 'high',
+        method: 'all_methods_failed',
+        details: `Could not confirm your ${actionType} action. Please ensure you completed the action on Twitter and try again.`
+      });
+      setStep('failed');
+
     } catch (error) {
       console.error('Verification error:', error);
+      setVerificationResult({
+        success: false,
+        confidence: 'low',
+        method: 'verification_error',
+        details: 'Verification service may be unavailable. Please try again.'
+      });
       setStep('failed');
     } finally {
       setIsVerifying(false);
@@ -180,12 +210,8 @@ export function TwitterActionVerifier({
 
 
   const handleClose = () => {
-    if (popupWindow && !popupWindow.closed) {
-      popupWindow.close();
-    }
     setStep('ready');
     setIsVerifying(false);
-    setPopupWindow(null);
     setVerificationId(null);
     setVerificationResult(null);
     setStartTime(null);
@@ -200,11 +226,9 @@ export function TwitterActionVerifier({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (popupWindow && !popupWindow.closed) {
-        popupWindow.close();
-      }
+      // Cleanup logic if needed
     };
-  }, [popupWindow]);
+  }, []);
 
   const actionInstructions = {
     like: 'Like the tweet ❤️',
@@ -296,7 +320,7 @@ export function TwitterActionVerifier({
                   <>
                     <p className="font-medium text-white text-lg">Action Completed!</p>
                     <p className="text-sm text-slate-400 mt-2">
-                      Now verify your {actionType} to earn your USDC reward
+                      Click verify below to confirm your {actionType} and earn USDC
                     </p>
                   </>
                 )}
@@ -408,17 +432,13 @@ export function TwitterActionVerifier({
 
               <div className="p-4 bg-blue-900/20 border border-blue-700 rounded-lg">
                 <p className="text-sm text-blue-300 mb-2">
-                  <strong>🔍 For Better Verification:</strong>
+                  <strong>🔍 Enhanced Verification:</strong>
                 </p>
-                <p className="text-sm text-blue-200 mb-2">
-                  Install our verification helper to automatically detect completed actions
-                </p>
-                <Button
-                  onClick={() => window.open('/install-verification.html', '_blank')}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-sm py-2"
-                >
-                  Install Verification Helper
-                </Button>
+                <ul className="text-sm text-blue-200 space-y-1">
+                  <li>• Count increase detection</li>
+                  <li>• Direct tweet interaction check</li>
+                  <li>• Professional TwitterAPI.io service</li>
+                </ul>
               </div>
 
               <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-lg">

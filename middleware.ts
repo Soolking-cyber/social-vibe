@@ -26,6 +26,11 @@ export default withAuth(
           return true
         }
         
+        // Allow access to TwitterAPI.io proxy (needed for verification)
+        if (pathname === '/api/twitterapi-io-proxy') {
+          return true
+        }
+        
         // Public routes that don't require authentication
         const publicRoutes = [
           '/favicon.ico',
