@@ -369,7 +369,7 @@ export default function CreateJob() {
                   <div className="text-center">
                     <Button
                       onClick={() => {
-                        window.open(`https://sepolia.etherscan.io/tx/${jobResult.transactionHash}`, '_blank');
+                        window.open(`https://etherscan.io/tx/${jobResult.transactionHash}`, '_blank');
                       }}
                       variant="link"
                       className="text-blue-400 hover:text-blue-300 text-sm"

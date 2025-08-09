@@ -202,26 +202,14 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                             </Button>
                           </div>
                         </div>
-                        <div className="bg-slate-800 p-4 rounded-lg">
-                          <h4 className="text-white font-medium mb-2">Get Test Tokens:</h4>
-                          <div className="space-y-2">
-                            <Button
-                              onClick={() => window.open('https://sepoliafaucet.com/', '_blank')}
-                              variant="outline"
-                              size="sm"
-                              className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
-                            >
-                              Get Sepolia ETH
-                            </Button>
-                          </div>
-                        </div>
+
                         <div>
                           <Label className="text-white">View on Blockchain:</Label>
                           <div className="mt-2">
                             <Button
                               onClick={() => {
                                 if (stats?.wallet?.address) {
-                                  window.open(`https://sepolia.etherscan.io/address/${stats.wallet.address}`, '_blank')
+                                  window.open(`https://etherscan.io/address/${stats.wallet.address}`, '_blank')
                                 }
                               }}
                               variant="outline"
@@ -272,7 +260,7 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                           await fetchWalletValue();
                         } else {
                           if (data.error && data.error.includes('Insufficient ETH balance')) {
-                            alert(`${data.error}\n\nTo fix this:\n1. Click "Check ETH Balance" to see your current ETH\n2. Click "Get Sepolia ETH" to get test ETH\n3. Wait a few minutes for the ETH to arrive\n4. Try withdrawing again`);
+                            alert(`${data.error}\n\nTo fix this:\n1. Get ETH from an exchange or faucet\n2. Send ETH to your wallet address\n3. Wait for the transaction to confirm\n4. Try withdrawing again`);
                             await fetchWalletValue();
                           } else {
                             alert(`Error: ${data.error}`);
@@ -297,37 +285,7 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                       'Withdraw Earnings'
                     )}
                   </Button>
-                  <Button
-                    onClick={async () => {
-                      try {
-                        const response = await fetch('/api/debug/eth-balance');
-                        const data = await response.json();
-                        if (data.success) {
-                          const debug = data.debug;
-                          const message = `ETH Balance Debug:\n\n` +
-                            `Wallet: ${debug.walletAddress}\n` +
-                            `Cached ETH: ${debug.cachedBalances.eth} ETH\n` +
-                            `Fresh ETH: ${debug.freshBalances?.eth || 'Failed to fetch'} ETH\n` +
-                            `Earned: $${debug.earnedBalance.toFixed(2)} USDC\n` +
-                            `Min ETH needed: ${debug.minEthRequired} ETH\n\n` +
-                            `Status:\n` +
-                            `- Can withdraw: ${debug.recommendations.readyToWithdraw ? 'Yes' : 'No'}\n` +
-                            `- Needs more ETH: ${debug.recommendations.needsEth ? 'Yes' : 'No'}\n` +
-                            `- Needs more earnings: ${debug.recommendations.needsMoreEarnings ? 'Yes' : 'No'}`;
-                          alert(message);
-                        } else {
-                          alert(`Debug failed: ${data.error}`);
-                        }
-                      } catch (error) {
-                        alert('Failed to debug ETH balance');
-                      }
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
-                  >
 
-                  </Button>
                 </div>
               ) : (
                 <div className="text-xs text-slate-500">

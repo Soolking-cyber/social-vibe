@@ -269,20 +269,12 @@ export default function WalletCard({ wallet, onRefresh, walletValue }: WalletCar
                   </div>
                 </div>
                 <div className="bg-slate-800 p-4 rounded-lg">
-                  <h4 className="text-white font-medium mb-2">Get Test Tokens:</h4>
+                  <h4 className="text-white font-medium mb-2">Blockchain Explorer:</h4>
                   <div className="space-y-2">
-                    <Button
-                      onClick={() => window.open('https://sepoliafaucet.com/', '_blank')}
-                      variant="outline"
-                      size="sm"
-                      className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
-                    >
-                      Get Sepolia ETH
-                    </Button>
                     <Button
                       onClick={() => {
                         if (wallet.address) {
-                          window.open(`https://sepolia.etherscan.io/address/${wallet.address}`, '_blank')
+                          window.open(`https://etherscan.io/address/${wallet.address}`, '_blank')
                         }
                       }}
                       variant="outline"
@@ -415,7 +407,7 @@ export default function WalletCard({ wallet, onRefresh, walletValue }: WalletCar
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-medium text-slate-300">Recent Transactions</h4>
             <Button
-              onClick={() => window.open(`https://sepolia.etherscan.io/address/${wallet.address}`, '_blank')}
+              onClick={() => window.open(`https://etherscan.io/address/${wallet.address}`, '_blank')}
               variant="ghost"
               size="sm"
               className="text-xs text-slate-400 hover:text-slate-300"
@@ -468,7 +460,7 @@ export default function WalletCard({ wallet, onRefresh, walletValue }: WalletCar
                 <div className="text-blue-400 text-sm font-medium mb-1">Transaction Hash:</div>
                 <div className="text-blue-300 font-mono text-xs break-all">{successData.transactionHash}</div>
                 <Button
-                  onClick={() => window.open(`https://sepolia.etherscan.io/tx/${successData.transactionHash}`, '_blank')}
+                  onClick={() => window.open(`https://etherscan.io/tx/${successData.transactionHash}`, '_blank')}
                   variant="outline"
                   size="sm"
                   className="w-full mt-2 border-blue-700 text-blue-300 hover:bg-blue-900/30"

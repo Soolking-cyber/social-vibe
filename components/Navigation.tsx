@@ -17,7 +17,7 @@ export default function Navigation() {
     { href: '/', label: 'Dashboard' },
     { href: '/marketplace', label: 'Marketplace' },
     { href: '/create-job', label: 'Create Job' },
-    ...(process.env.NODE_ENV === 'development' ? [{ href: '/test-verification', label: 'Test Verification' }] : [])
+
   ];
 
   return (
