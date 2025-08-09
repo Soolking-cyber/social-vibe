@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import UserDashboard from '../../components/UserDashboard';
-import { SimpleTwitterVerification } from '../../components/SimpleTwitterVerification';
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,7 +34,7 @@ export default function Marketplace() {
     const [completingJobs, setCompletingJobs] = useState<Set<number>>(new Set());
     const [verifyingJobs, setVerifyingJobs] = useState<Set<number>>(new Set());
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
-    const [verificationJob, setVerificationJob] = useState<Job | null>(null);
+    const [jobsInProgress, setJobsInProgress] = useState<Set<string>>(new Set());
 
 
     // Helper function to normalize action types
@@ -55,6 +55,101 @@ export default function Marketplace() {
             window.location.reload();
         } catch (error) {
             console.error('Error refreshing balances:', error);
+        }
+    };
+
+    const handleCompleteJob = async (job: Job) => {
+        try {
+            setCompletingJobs(prev => new Set(prev).add(job.id));
+            
+            // Phase 1: Start verification and get baseline counts
+            const response = await fetch('/api/jobs/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    jobId: job.id,
+                    phase: 'start'
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to start verification');
+            }
+
+            const result = await response.json();
+            console.log('✅ Baseline counts captured:', result);
+
+            // Mark job as in progress (ready for verification)
+            setJobsInProgress(prev => new Set(prev).add(job.id.toString()));
+            
+            // Redirect to Twitter
+            window.open(job.tweetUrl, '_blank', 'noopener,noreferrer');
+            
+        } catch (error) {
+            console.error('Failed to start job completion:', error);
+            alert(error instanceof Error ? error.message : 'Failed to start verification');
+        } finally {
+            setCompletingJobs(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(job.id);
+                return newSet;
+            });
+        }
+    };
+
+    const handleVerifyJob = async (job: Job) => {
+        try {
+            setVerifyingJobs(prev => new Set(prev).add(job.id));
+            
+            // Phase 2: Verify the action completion
+            const response = await fetch('/api/jobs/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    jobId: job.id,
+                    phase: 'verify'
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Verification failed');
+            }
+
+            const result = await response.json();
+            console.log('✅ Job completed successfully:', result);
+
+            // Update job status
+            setJobs(prevJobs =>
+                prevJobs.map(j =>
+                    j.id === job.id
+                        ? { ...j, hasUserCompleted: true, canComplete: false }
+                        : j
+                )
+            );
+
+            // Remove from in-progress
+            setJobsInProgress(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(job.id.toString());
+                return newSet;
+            });
+
+            // Refresh balances
+            await refreshBalances();
+
+            alert(`Success! You earned $${result.rewardAmount} USDC!`);
+            
+        } catch (error) {
+            console.error('Failed to verify job completion:', error);
+            alert(error instanceof Error ? error.message : 'Verification failed');
+        } finally {
+            setVerifyingJobs(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(job.id);
+                return newSet;
+            });
         }
     };
 
@@ -355,40 +450,14 @@ export default function Marketplace() {
                                             ) : (
                                                 // Job not completed - show action buttons
                                                 <>
-                                                    {verificationJob?.id === job.id ? (
-                                                        <SimpleTwitterVerification
-                                                            job={{
-                                                                id: job.id.toString(),
-                                                                actionType: job.actionType,
-                                                                targetUrl: job.tweetUrl,
-                                                                reward: parseFloat(job.pricePerAction).toFixed(3)
-                                                            }}
-                                                            onVerified={() => {
-                                                                // Update the specific job to show as completed
-                                                                setJobs(prevJobs =>
-                                                                    prevJobs.map(j =>
-                                                                        j.id === job.id
-                                                                            ? { ...j, hasUserCompleted: true, canComplete: false }
-                                                                            : j
-                                                                    )
-                                                                );
-                                                                setVerificationJob(null);
-                                                                refreshBalances();
-                                                            }}
-                                                            onCancel={() => setVerificationJob(null)}
-                                                        />
-                                                    ) : (
+                                                    {jobsInProgress.has(job.id.toString()) ? (
+                                                        // Show verify button when job is in progress
                                                         <Button
-                                                            onClick={() => setVerificationJob(job)}
-                                                            disabled={completingJobs.has(job.id) || verifyingJobs.has(job.id)}
-                                                            className="w-full bg-blue-600 hover:bg-blue-700"
+                                                            onClick={() => handleVerifyJob(job)}
+                                                            disabled={verifyingJobs.has(job.id)}
+                                                            className="w-full bg-green-600 hover:bg-green-700"
                                                         >
-                                                            {completingJobs.has(job.id) ? (
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                                    Loading...
-                                                                </div>
-                                                            ) : verifyingJobs.has(job.id) ? (
+                                                            {verifyingJobs.has(job.id) ? (
                                                                 <div className="flex items-center gap-2">
                                                                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                                                     Verifying...
@@ -396,9 +465,30 @@ export default function Marketplace() {
                                                             ) : (
                                                                 <>
                                                                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                                    </svg>
+                                                                    ✅ Verify {job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    ) : (
+                                                        // Show complete button initially
+                                                        <Button
+                                                            onClick={() => handleCompleteJob(job)}
+                                                            disabled={completingJobs.has(job.id)}
+                                                            className="w-full bg-blue-600 hover:bg-blue-700"
+                                                        >
+                                                            {completingJobs.has(job.id) ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                                    Starting...
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                                     </svg>
-                                                                    🐦 Complete {job.actionType} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
+                                                                    🐦 Complete {job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)} - Earn ${parseFloat(job.pricePerAction).toFixed(3)} USDC
                                                                 </>
                                                             )}
                                                         </Button>

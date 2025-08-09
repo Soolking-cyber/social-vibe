@@ -155,6 +155,10 @@ export async function POST(request: NextRequest) {
 
       console.log(`✅ Extracted tweet ID: ${tweetId}`);
 
+      // Set base URL for API calls
+      const baseUrl = process.env.NEXTAUTH_URL || 'https://www.socialimpact.fun';
+      console.log(`🌐 Using base URL: ${baseUrl}`);
+
       // Handle two-phase verification process
       if (phase === 'start') {
         console.log(`🚀 PHASE 1: Starting verification - capturing BEFORE counts`);
@@ -163,7 +167,7 @@ export async function POST(request: NextRequest) {
         console.log(`📊 Getting BEFORE counts for tweet ${tweetId}...`);
         console.log(`🔗 Tweet URL: ${job.tweetUrl}`);
         
-        const beforeResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+        const beforeResponse = await fetch(`${baseUrl}/api/twitterapi-io-proxy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -306,7 +310,7 @@ export async function POST(request: NextRequest) {
 
         // Get AFTER counts (skip cache to get fresh data)
         console.log(`📊 Getting AFTER counts for tweet ${tweetId}...`);
-        const afterResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+        const afterResponse = await fetch(`${baseUrl}/api/twitterapi-io-proxy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -360,7 +364,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Use the verification endpoint with before/after counts
-        const verificationResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+        console.log(`🔍 Calling verification endpoint:`, {
+          action: apiAction,
+          tweetId: tweetId,
+          beforeCounts: beforeCounts,
+          afterCounts: afterCounts
+        });
+
+        const verificationResponse = await fetch(`${baseUrl}/api/twitterapi-io-proxy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -371,8 +382,12 @@ export async function POST(request: NextRequest) {
           })
         });
 
+        console.log(`📡 Verification response status: ${verificationResponse.status}`);
+
         if (!verificationResponse.ok) {
-          throw new Error('Failed to verify action');
+          const errorText = await verificationResponse.text();
+          console.error(`❌ Verification API failed:`, errorText);
+          throw new Error(`Failed to verify action: ${errorText}`);
         }
 
         const verificationResult = await verificationResponse.json();
@@ -443,10 +458,24 @@ export async function POST(request: NextRequest) {
       }
 
     } catch (verificationError) {
-      console.error('Twitter verification process failed:', verificationError);
+      console.error('❌ CRITICAL: Twitter verification process failed:', verificationError);
+      console.error('Error details:', {
+        name: verificationError instanceof Error ? verificationError.name : 'Unknown',
+        message: verificationError instanceof Error ? verificationError.message : 'Unknown error',
+        stack: verificationError instanceof Error ? verificationError.stack : 'No stack trace',
+        jobId: jobIdNumber,
+        actionType: job?.actionType,
+        phase: phase,
+        userId: user?.id
+      });
+      
       return NextResponse.json({
         error: 'Verification service temporarily unavailable. Please try again later.',
-        details: verificationError instanceof Error ? verificationError.message : 'Unknown error'
+        details: verificationError instanceof Error ? verificationError.message : 'Unknown error',
+        debug: process.env.NODE_ENV === 'development' ? {
+          errorType: verificationError instanceof Error ? verificationError.name : 'Unknown',
+          errorMessage: verificationError instanceof Error ? verificationError.message : 'Unknown error'
+        } : undefined
       }, { status: 500 });
     }
 
