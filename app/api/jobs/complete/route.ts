@@ -159,28 +159,61 @@ export async function POST(request: NextRequest) {
       if (phase === 'start') {
         console.log(`🚀 PHASE 1: Starting verification - capturing BEFORE counts`);
         
-        // Get BEFORE counts (baseline)
+        // Get BEFORE counts (baseline) - always fresh data
         console.log(`📊 Getting BEFORE counts for tweet ${tweetId}...`);
+        console.log(`🔗 Tweet URL: ${job.tweetUrl}`);
+        
         const beforeResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'getTweetCounts',
-            tweetId: tweetId
+            tweetId: tweetId,
+            skipCache: true  // Always get fresh data for verification
           })
         });
 
+        console.log(`📡 Before response status: ${beforeResponse.status}`);
+
         if (!beforeResponse.ok) {
-          throw new Error('Failed to get before counts');
+          const errorText = await beforeResponse.text();
+          console.error(`❌ Before counts API failed:`, errorText);
+          throw new Error(`Failed to get before counts: ${errorText}`);
         }
 
         const beforeData = await beforeResponse.json();
+        console.log(`📋 Before response data:`, beforeData);
+        
         if (!beforeData.success) {
+          console.error(`❌ Before counts not successful:`, beforeData);
           throw new Error(beforeData.error || 'Failed to get before counts');
         }
 
         const beforeCounts = beforeData.counts;
         console.log(`✅ BEFORE counts captured:`, beforeCounts);
+        
+        // Validate that we got actual count data
+        if (!beforeCounts || typeof beforeCounts !== 'object') {
+          console.error(`❌ Invalid before counts format:`, beforeCounts);
+          throw new Error('Invalid tweet counts format received');
+        }
+        
+        // Check if all counts are 0 (might indicate an issue)
+        const totalCounts = (beforeCounts.likes || 0) + (beforeCounts.retweets || 0) + (beforeCounts.replies || 0);
+        console.log(`📊 Total engagement before: ${totalCounts} (likes: ${beforeCounts.likes}, retweets: ${beforeCounts.retweets}, replies: ${beforeCounts.replies})`);
+        
+        if (totalCounts === 0) {
+          console.warn(`⚠️ Tweet has zero engagement - this might be a new tweet or there could be an API issue`);
+        }
+
+        // Store baseline counts for verification phase
+        console.log(`💾 Storing baseline counts for verification phase`);
+        const baselineCounts = {
+          likes: beforeCounts.likes || 0,
+          retweets: beforeCounts.retweets || 0,
+          replies: beforeCounts.replies || 0,
+          quotes: beforeCounts.quotes || 0
+        };
 
         // Store verification session in memory/database for later verification
         const verificationKey = `verification_${user.id}_${jobIdNumber}`;
@@ -214,10 +247,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           phase: 'verification_ready',
           message: `Ready to verify your ${job.actionType} action. Please complete the action on Twitter, then click "Verify ${job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)}" to confirm.`,
-          beforeCounts,
+          beforeCounts: baselineCounts,
           tweetId,
           tweetUrl: job.tweetUrl,
           actionType: job.actionType,
+          currentCounts: {
+            likes: baselineCounts.likes,
+            retweets: baselineCounts.retweets,
+            replies: baselineCounts.replies
+          },
           instructions: {
             like: 'Click the heart icon on the tweet to like it',
             retweet: 'Click the retweet icon and confirm the retweet',
@@ -266,28 +304,47 @@ export async function POST(request: NextRequest) {
           }, { status: 400 });
         }
 
-        // Get AFTER counts
+        // Get AFTER counts (skip cache to get fresh data)
         console.log(`📊 Getting AFTER counts for tweet ${tweetId}...`);
         const afterResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'getTweetCounts',
-            tweetId: tweetId
+            tweetId: tweetId,
+            skipCache: true  // Force fresh data for verification
           })
         });
 
+        console.log(`📡 After response status: ${afterResponse.status}`);
+
         if (!afterResponse.ok) {
-          throw new Error('Failed to get after counts');
+          const errorText = await afterResponse.text();
+          console.error(`❌ After counts API failed:`, errorText);
+          throw new Error(`Failed to get after counts: ${errorText}`);
         }
 
         const afterData = await afterResponse.json();
+        console.log(`📋 After response data:`, afterData);
+        
         if (!afterData.success) {
+          console.error(`❌ After counts not successful:`, afterData);
           throw new Error(afterData.error || 'Failed to get after counts');
         }
 
         const afterCounts = afterData.counts;
         console.log(`✅ AFTER counts captured:`, afterCounts);
+        
+        // Compare before and after counts
+        console.log(`📊 COUNT COMPARISON:`, {
+          before: beforeCounts,
+          after: afterCounts,
+          differences: {
+            likes: (afterCounts.likes || 0) - (beforeCounts.likes || 0),
+            retweets: (afterCounts.retweets || 0) - (beforeCounts.retweets || 0),
+            replies: (afterCounts.replies || 0) - (beforeCounts.replies || 0)
+          }
+        });
 
         // Verify the action by comparing counts
         console.log(`🔍 Verifying ${job.actionType} action by comparing counts...`);

@@ -16,7 +16,7 @@ console.log('🔧 Environment variables check:', {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, tweetId, username } = body;
+    const { action, tweetId, username, skipCache } = body;
 
     if (!action) {
       return NextResponse.json(
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
         if (!tweetId) {
           return NextResponse.json({ error: 'Tweet ID required for getting tweet counts' }, { status: 400 });
         }
-        return await getTweetCounts(tweetId);
+        return await getTweetCounts(tweetId, skipCache);
 
       case 'getUserCounts':
         if (!username) {
@@ -191,12 +191,24 @@ async function getUserCounts(username: string) {
 const tweetCountsCache = new Map<string, { counts: any; timestamp: number }>();
 const CACHE_DURATION = 30000; // 30 seconds cache
 
+// Clear cache for specific tweet (useful for verification)
+function clearTweetCache(tweetId: string) {
+  tweetCountsCache.delete(tweetId);
+  console.log(`🗑️ Cleared cache for tweet ${tweetId}`);
+}
+
 /**
  * Get tweet engagement counts with caching to minimize API usage
  */
 
 async function getTweetCounts(tweetId: string, skipCache = false) {
   try {
+    // Clear cache if skipCache is requested (for verification)
+    if (skipCache) {
+      clearTweetCache(tweetId);
+      console.log(`🔄 Skipping cache for tweet ${tweetId} - fetching fresh data`);
+    }
+    
     // Check cache first to avoid unnecessary API calls
     if (!skipCache) {
       const cached = tweetCountsCache.get(tweetId);
@@ -214,6 +226,8 @@ async function getTweetCounts(tweetId: string, skipCache = false) {
     }
 
     console.log(`🔍 Fetching fresh tweet counts for tweet ${tweetId}`);
+    console.log(`🔗 API URL: https://api.twitterapi.io/twitter/tweets?tweet_ids=${tweetId}`);
+    console.log(`🔑 Using API key: ${TWITTERAPI_IO_API_KEY ? `${TWITTERAPI_IO_API_KEY.substring(0, 8)}...` : 'NOT SET'}`);
 
     const response = await fetch(
       `https://api.twitterapi.io/twitter/tweets?tweet_ids=${tweetId}`,
@@ -255,9 +269,17 @@ async function getTweetCounts(tweetId: string, skipCache = false) {
     }
 
     const tweetData = await response.json();
+    console.log(`📋 TwitterAPI.io response:`, JSON.stringify(tweetData, null, 2));
 
     if (!tweetData.tweets || !Array.isArray(tweetData.tweets) || tweetData.tweets.length === 0) {
-      console.error('❌ Tweet not found:', tweetId);
+      console.error('❌ Tweet not found or empty response:', {
+        tweetId,
+        hasData: !!tweetData,
+        hasTweets: !!tweetData.tweets,
+        isArray: Array.isArray(tweetData.tweets),
+        length: tweetData.tweets?.length || 0,
+        fullResponse: tweetData
+      });
       return NextResponse.json(
         { error: 'Tweet not found or is private' },
         { status: 404 }
@@ -265,12 +287,16 @@ async function getTweetCounts(tweetId: string, skipCache = false) {
     }
 
     const tweet = tweetData.tweets[0];
+    console.log(`📊 Raw tweet data:`, JSON.stringify(tweet, null, 2));
+    
     const counts = {
       likes: tweet.likeCount || tweet.favorite_count || 0,
       retweets: tweet.retweetCount || tweet.retweet_count || 0,
       replies: tweet.replyCount || tweet.reply_count || 0,
       quotes: tweet.quoteCount || tweet.quote_count || 0
     };
+    
+    console.log(`📊 Extracted counts:`, counts);
 
     // Cache the result to minimize future API calls
     tweetCountsCache.set(tweetId, {
