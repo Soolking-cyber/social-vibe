@@ -213,29 +213,6 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                             >
                               Get Sepolia ETH
                             </Button>
-                            <Button
-                              onClick={async () => {
-                                try {
-                                  const response = await fetch('/api/wallet/get-test-usdc', {
-                                    method: 'POST'
-                                  });
-                                  const data = await response.json();
-                                  if (data.success) {
-                                    alert(`Success! ${data.message}\nNew Balance: ${data.new_balance} USDC`);
-                                    await fetchUserStats();
-                                    await fetchWalletValue();
-                                  } else {
-                                    alert(`Error: ${data.error}`);
-                                  }
-                                } catch (error) {
-                                  alert('Failed to get test USDC');
-                                }
-                              }}
-                              size="sm"
-                              className="w-full bg-green-600 hover:bg-green-700"
-                            >
-                              Get 100 Test USDC
-                            </Button>
                           </div>
                         </div>
                         <div>
@@ -349,7 +326,7 @@ export default function UserDashboard({ onRefresh }: UserDashboardProps = {}) {
                     size="sm"
                     className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
                   >
-                    Debug ETH Balance
+
                   </Button>
                 </div>
               ) : (
