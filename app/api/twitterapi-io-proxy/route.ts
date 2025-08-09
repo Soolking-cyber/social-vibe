@@ -49,6 +49,12 @@ export async function POST(request: NextRequest) {
         }
         return await getTweetCounts(tweetId);
 
+      case 'getUserCounts':
+        if (!username) {
+          return NextResponse.json({ error: 'Username required for getting user counts' }, { status: 400 });
+        }
+        return await getUserCounts(username);
+
       case 'verifyLike':
         if (!tweetId) {
           return NextResponse.json({ error: 'Tweet ID required for like verification' }, { status: 400 });
@@ -72,7 +78,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Unsupported action. Primary actions: getTweetCounts, verifyLike, verifyRetweet, verifyReply' },
+          { error: 'Unsupported action. Primary actions: getTweetCounts, getUserCounts, verifyLike, verifyRetweet, verifyReply' },
           { status: 400 }
         );
     }
@@ -82,6 +88,98 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'Failed to process TwitterAPI.io request',
+        details: error instanceof Error ? error.message : String(error)
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Get user profile counts (tweets, likes, retweets)
+ */
+async function getUserCounts(username: string) {
+  try {
+    console.log(`🔍 Fetching user counts for @${username}`);
+
+    const response = await fetch(
+      `https://api.twitterapi.io/twitter/users/by/username/${username}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-API-Key': TWITTERAPI_IO_API_KEY!,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('❌ TwitterAPI.io user lookup failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        username
+      });
+
+      if (response.status === 401) {
+        return NextResponse.json(
+          { error: 'TwitterAPI.io authentication failed. API key may be invalid.' },
+          { status: 401 }
+        );
+      }
+
+      if (response.status === 429) {
+        return NextResponse.json(
+          { error: 'TwitterAPI.io rate limit exceeded. Please try again later.' },
+          { status: 429 }
+        );
+      }
+
+      if (response.status === 404) {
+        return NextResponse.json(
+          { error: 'Twitter user not found or account is private/suspended' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        { error: `TwitterAPI.io error: ${errorData || response.status}` },
+        { status: response.status }
+      );
+    }
+
+    const userData = await response.json();
+
+    if (!userData.user) {
+      console.error('❌ User not found:', username);
+      return NextResponse.json(
+        { error: 'User not found or account is private/suspended' },
+        { status: 404 }
+      );
+    }
+
+    const user = userData.user;
+    const counts = {
+      tweets: user.tweet_count || user.statuses_count || 0,
+      likes: user.like_count || user.favourites_count || 0,
+      retweets: 0 // User retweet count not available in profile API
+    };
+
+    console.log('✅ Successfully fetched user counts:', counts);
+
+    return NextResponse.json({
+      success: true,
+      counts,
+      username,
+      service: 'twitterapi.io',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching user counts:', error);
+    return NextResponse.json(
+      {
+        error: 'Failed to fetch user counts',
         details: error instanceof Error ? error.message : String(error)
       },
       { status: 500 }
@@ -329,7 +427,7 @@ export async function GET() {
     userId: TWITTERAPI_IO_USER_ID || 'not_set',
     hasApiKey: !!TWITTERAPI_IO_API_KEY,
     timestamp: new Date().toISOString(),
-    supportedActions: ['getTweetCounts', 'verifyLike', 'verifyRetweet', 'verifyReply'],
+    supportedActions: ['getTweetCounts', 'getUserCounts', 'verifyLike', 'verifyRetweet', 'verifyReply'],
     primaryMethod: 'tweet-engagement-counts',
     optimization: 'api-credit-minimized',
     cacheEnabled: true,

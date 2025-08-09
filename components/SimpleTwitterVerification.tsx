@@ -80,12 +80,9 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
     fetchTwitterHandle();
   }, [session]);
 
-  const handleOpenTwitter = () => {
-    window.open(job.targetUrl, '_blank', 'noopener,noreferrer');
-    setStep('verify');
-  };
+  const [beforeCounts, setBeforeCounts] = useState<any>(null);
 
-  const handleVerify = async () => {
+  const handleOpenTwitter = async () => {
     if (!userTwitterHandle) {
       setErrorMessage('Twitter handle required for verification');
       setStep('error');
@@ -96,81 +93,85 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
     setErrorMessage('');
 
     try {
-      // Extract tweet ID
-      const tweetIdMatch = job.targetUrl.match(/status\/(\d+)/);
-      if (!tweetIdMatch) {
-        throw new Error('Invalid tweet URL');
+      // Phase 1: Start verification and get before counts
+      const startResponse = await fetch('/api/jobs/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          jobId: job.id,
+          phase: 'start'
+        })
+      });
+
+      if (!startResponse.ok) {
+        const errorData = await startResponse.json();
+        throw new Error(errorData.error || 'Failed to start verification');
       }
-      const tweetId = tweetIdMatch[1];
 
-      // Map action types
-      let apiAction = '';
-      if (job.actionType === 'like') apiAction = 'verifyLike';
-      else if (job.actionType === 'retweet') apiAction = 'verifyRetweet';
-      else if (job.actionType === 'comment') apiAction = 'verifyReply';
+      const startResult = await startResponse.json();
+      console.log('🚀 Phase 1 complete:', startResult);
 
-      // For likes, try multiple times with delays (TwitterAPI.io can be slow to update)
-      let maxRetries = job.actionType === 'like' ? 3 : 1;
-      let verified = false;
-      let lastResult = null;
+      // Store before counts for phase 2
+      setBeforeCounts(startResult.beforeCounts);
 
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`🔍 Verification attempt ${attempt}/${maxRetries} for ${job.actionType}`);
+      // Open Twitter and move to verify step
+      window.open(job.targetUrl, '_blank', 'noopener,noreferrer');
+      setStep('verify');
+
+    } catch (error) {
+      console.error('Failed to start verification:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to start verification');
+      setStep('error');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    if (!userTwitterHandle || !beforeCounts) {
+      setErrorMessage('Verification session not found. Please start over.');
+      setStep('error');
+      return;
+    }
+
+    setIsVerifying(true);
+    setErrorMessage('');
+
+    try {
+      // Phase 2: Verify the action completion
+      const verifyResponse = await fetch('/api/jobs/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          jobId: job.id,
+          phase: 'verify',
+          beforeCounts: beforeCounts
+        })
+      });
+
+      if (!verifyResponse.ok) {
+        const errorData = await verifyResponse.json();
         
-        // Add delay between attempts (except first)
-        if (attempt > 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-
-        // Verify the action
-        const response = await fetch('/api/twitterapi-io-proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: userTwitterHandle,
-            action: apiAction,
-            tweetId: tweetId
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
+        if (errorData.phase === 'verification_failed') {
+          // Show detailed verification failure info
+          const details = errorData.details;
+          throw new Error(`${errorData.error}\n\nBefore: ${details.beforeCounts[details.countType] || 0}\nAfter: ${details.afterCounts[details.countType] || 0}`);
+        } else if (errorData.phase === 'expired') {
+          throw new Error('Verification session expired. Please start over.');
+        } else {
           throw new Error(errorData.error || 'Verification failed');
         }
-
-        const result = await response.json();
-        lastResult = result;
-        console.log(`🔍 Verification attempt ${attempt} result:`, result);
-        
-        if (result.success && result.verified) {
-          verified = true;
-          break;
-        }
       }
-      
-      if (verified) {
-        // Complete the job
-        const jobResponse = await fetch('/api/jobs/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobId: job.id })
-        });
 
-        if (jobResponse.ok) {
-          setStep('success');
-          setTimeout(() => {
-            onVerified();
-          }, 2000);
-        } else {
-          const jobError = await jobResponse.json();
-          throw new Error(jobError.error || 'Failed to complete job');
-        }
-      } else {
-        // Show more detailed error message
-        const errorMsg = lastResult?.message || `Please ${job.actionType} the tweet first, then try again. If you just ${job.actionType}d it, wait a moment and try again.`;
-        console.error('❌ Verification failed after all attempts:', lastResult);
-        throw new Error(errorMsg);
-      }
+      const verifyResult = await verifyResponse.json();
+      console.log('✅ Phase 2 complete:', verifyResult);
+
+      // Success!
+      setStep('success');
+      setTimeout(() => {
+        onVerified();
+      }, 2000);
+
     } catch (error) {
       console.error('Verification error:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Verification failed');
@@ -234,11 +235,20 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
           </Button>
           <Button
             onClick={handleOpenTwitter}
-            disabled={!userTwitterHandle}
+            disabled={!userTwitterHandle || isVerifying}
             className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
           >
-            <ExternalLink className="h-4 w-4 mr-2" />
-            Open Tweet & {actionLabels[job.actionType]}
+            {isVerifying ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Starting verification...
+              </>
+            ) : (
+              <>
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Complete {actionLabels[job.actionType]}
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -251,10 +261,10 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
         <div className="text-center">
           <div className="text-4xl mb-2">✅</div>
           <h3 className="text-white font-medium mb-2">
-            Ready to Verify
+            Ready to Verify {actionLabels[job.actionType]}
           </h3>
           <p className="text-slate-400 text-sm">
-            Did you {job.actionType} the tweet? Click verify to check and earn your reward.
+            Complete the {job.actionType} action on Twitter, then click "Verify" to confirm and earn your reward.
           </p>
         </div>
 
@@ -282,12 +292,12 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
             {isVerifying ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                {job.actionType === 'like' ? 'Checking if you liked it...' : 'Verifying...'}
+                Verifying {job.actionType}...
               </>
             ) : (
               <>
                 <CheckCircle className="h-4 w-4 mr-2" />
-                Verify & Earn {job.reward} USDC
+                Verify {actionLabels[job.actionType]} & Earn {job.reward} USDC
               </>
             )}
           </Button>
@@ -349,10 +359,14 @@ export function SimpleTwitterVerification({ job, onVerified, onCancel }: SimpleT
             Cancel
           </Button>
           <Button
-            onClick={() => setStep('complete')}
+            onClick={() => {
+              setStep('complete');
+              setBeforeCounts(null);
+              setErrorMessage('');
+            }}
             className="flex-1 bg-blue-600 hover:bg-blue-700"
           >
-            Try Again
+            Start Over
           </Button>
         </div>
       </div>

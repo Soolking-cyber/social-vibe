@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth/next';
 import { createClient } from '@supabase/supabase-js';
 import { authOptions } from '@/auth';
 import { jobValidator } from '@/lib/job-validation';
-import { twitterAPIIOVerifier } from '@/lib/twitterapi-io-verification';
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,8 +38,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
 
-    const { jobId } = body;
-    console.log(`Job ID extraction:`, { jobId, type: typeof jobId, hasJobId: !!jobId });
+    const { jobId, phase = 'start' } = body;
+    console.log(`Job completion request:`, { jobId, phase, type: typeof jobId, hasJobId: !!jobId });
 
     if (!jobId) {
       console.log(`❌ RETURNING 400: No jobId provided in request`);
@@ -155,86 +155,235 @@ export async function POST(request: NextRequest) {
 
       console.log(`✅ Extracted tweet ID: ${tweetId}`);
 
-      // Perform dual verification using TwitterAPI.io
-      console.log(`🔍 Starting TwitterAPI.io verification...`);
-      
-      let verificationPassed = false;
-      let verificationMethod = '';
-
-      // Method 1: Try count-based verification first
-      try {
-        console.log(`🔍 Attempting count-based verification...`);
+      // Handle two-phase verification process
+      if (phase === 'start') {
+        console.log(`🚀 PHASE 1: Starting verification - capturing BEFORE counts`);
         
-        // For server-side verification, we need to create a temporary verification session
-        const normalizedActionType = job.actionType === 'comment' ? 'reply' : job.actionType;
-        const verificationId = await twitterAPIIOVerifier.startVerification(
-          job.tweetUrl, 
-          twitterUsername, 
-          normalizedActionType as 'like' | 'retweet' | 'reply'
-        );
+        // Get BEFORE counts (baseline)
+        console.log(`📊 Getting BEFORE counts for tweet ${tweetId}...`);
+        const beforeResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getTweetCounts',
+            tweetId: tweetId
+          })
+        });
 
-        // Wait a moment for the initial counts to be captured
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const countResult = await twitterAPIIOVerifier.verifyCompletion(verificationId);
-        
-        if (countResult.success) {
-          verificationPassed = true;
-          verificationMethod = 'count_increase';
-          console.log(`✅ Count-based verification succeeded: ${countResult.details}`);
+        if (!beforeResponse.ok) {
+          throw new Error('Failed to get before counts');
         }
-      } catch (countError) {
-        console.log(`⚠️ Count-based verification failed:`, countError);
-      }
 
-      // Method 2: If count-based fails, try direct interaction verification
-      if (!verificationPassed) {
-        console.log(`🔍 Attempting direct interaction verification...`);
+        const beforeData = await beforeResponse.json();
+        if (!beforeData.success) {
+          throw new Error(beforeData.error || 'Failed to get before counts');
+        }
+
+        const beforeCounts = beforeData.counts;
+        console.log(`✅ BEFORE counts captured:`, beforeCounts);
+
+        // Store verification session in memory/database for later verification
+        const verificationKey = `verification_${user.id}_${jobIdNumber}`;
         
+        // Try to store in a simple table or use a cache mechanism
+        // For now, we'll use a simple approach with user metadata or a separate table
         try {
-          // Map action types to API actions
-          let apiAction = '';
-          if (job.actionType === 'like') apiAction = 'verifyLike';
-          else if (job.actionType === 'retweet') apiAction = 'verifyRetweet';
-          else if (job.actionType === 'comment') apiAction = 'verifyReply';
-          
-          if (apiAction) {
-            // Make direct API call to our proxy
-            const directVerificationResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                username: twitterUsername,
-                action: apiAction,
-                tweetId: tweetId
-              })
+          const { error: sessionError } = await supabase
+            .from('verification_sessions')
+            .upsert({
+              user_id: user.id,
+              job_id: jobIdNumber,
+              tweet_id: tweetId,
+              action_type: job.actionType,
+              before_counts: beforeCounts,
+              created_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes
+            }, {
+              onConflict: 'user_id,job_id'
             });
 
-            if (directVerificationResponse.ok) {
-              const directResult = await directVerificationResponse.json();
+          if (sessionError) {
+            console.warn('Could not store verification session in database:', sessionError);
+            // Continue anyway - we'll return the before counts to the client
+          }
+        } catch (dbError) {
+          console.warn('Verification sessions table may not exist, continuing with client-side storage');
+        }
+
+        // Return the before counts and instructions for the user
+        return NextResponse.json({
+          phase: 'verification_ready',
+          message: `Ready to verify your ${job.actionType} action. Please complete the action on Twitter, then click "Verify ${job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)}" to confirm.`,
+          beforeCounts,
+          tweetId,
+          tweetUrl: job.tweetUrl,
+          actionType: job.actionType,
+          instructions: {
+            like: 'Click the heart icon on the tweet to like it',
+            retweet: 'Click the retweet icon and confirm the retweet',
+            comment: 'Click reply and post your comment on the tweet'
+          }[job.actionType] || 'Complete the required action on the tweet'
+        });
+
+      } else if (phase === 'verify') {
+        console.log(`🔍 PHASE 2: Verifying action completion`);
+
+        // Get before counts from the request or database
+        let beforeCounts = body.beforeCounts;
+        
+        if (!beforeCounts) {
+          // Try to get from database
+          try {
+            const { data: session } = await supabase
+              .from('verification_sessions')
+              .select('before_counts, created_at')
+              .eq('user_id', user.id)
+              .eq('job_id', jobIdNumber)
+              .single();
+
+            if (session) {
+              beforeCounts = session.before_counts;
+              console.log(`📋 Retrieved before counts from database:`, beforeCounts);
               
-              if (directResult.success && directResult.verified) {
-                verificationPassed = true;
-                verificationMethod = 'direct_interaction';
-                console.log(`✅ Direct interaction verification succeeded: ${directResult.message}`);
+              // Check if session is expired (10 minutes)
+              const sessionAge = Date.now() - new Date(session.created_at).getTime();
+              if (sessionAge > 10 * 60 * 1000) {
+                return NextResponse.json({
+                  error: 'Verification session expired. Please start the process again.',
+                  phase: 'expired'
+                }, { status: 400 });
               }
             }
+          } catch (dbError) {
+            console.warn('Could not retrieve verification session from database');
           }
-        } catch (directError) {
-          console.log(`⚠️ Direct interaction verification failed:`, directError);
         }
-      }
 
-      // Final verification check
-      if (!verificationPassed) {
-        console.log(`❌ All verification methods failed`);
+        if (!beforeCounts) {
+          return NextResponse.json({
+            error: 'No verification session found. Please start the completion process first.',
+            phase: 'restart_required'
+          }, { status: 400 });
+        }
+
+        // Get AFTER counts
+        console.log(`📊 Getting AFTER counts for tweet ${tweetId}...`);
+        const afterResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'getTweetCounts',
+            tweetId: tweetId
+          })
+        });
+
+        if (!afterResponse.ok) {
+          throw new Error('Failed to get after counts');
+        }
+
+        const afterData = await afterResponse.json();
+        if (!afterData.success) {
+          throw new Error(afterData.error || 'Failed to get after counts');
+        }
+
+        const afterCounts = afterData.counts;
+        console.log(`✅ AFTER counts captured:`, afterCounts);
+
+        // Verify the action by comparing counts
+        console.log(`🔍 Verifying ${job.actionType} action by comparing counts...`);
+
+        // Map action types to API verification actions
+        let apiAction = '';
+        if (job.actionType === 'like') apiAction = 'verifyLike';
+        else if (job.actionType === 'retweet') apiAction = 'verifyRetweet';
+        else if (job.actionType === 'comment') apiAction = 'verifyReply';
+
+        if (!apiAction) {
+          throw new Error(`Unsupported action type: ${job.actionType}`);
+        }
+
+        // Use the verification endpoint with before/after counts
+        const verificationResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/twitterapi-io-proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: apiAction,
+            tweetId: tweetId,
+            beforeCounts: beforeCounts,
+            afterCounts: afterCounts
+          })
+        });
+
+        if (!verificationResponse.ok) {
+          throw new Error('Failed to verify action');
+        }
+
+        const verificationResult = await verificationResponse.json();
+        console.log(`📋 Verification result:`, verificationResult);
+
+        if (!verificationResult.success || !verificationResult.verified) {
+          console.log(`❌ Action verification failed:`, verificationResult.message);
+
+          // Provide detailed feedback about what went wrong
+          const countType = job.actionType === 'like' ? 'likes' :
+            job.actionType === 'retweet' ? 'retweets' : 'replies';
+          const beforeCount = beforeCounts[countType] || 0;
+          const afterCount = afterCounts[countType] || 0;
+
+          return NextResponse.json({
+            error: `Could not verify your ${job.actionType} action. The ${countType} count did not increase.`,
+            phase: 'verification_failed',
+            details: {
+              expected: `${countType} count should increase from ${beforeCount}`,
+              actual: `${countType} count remained at ${afterCount}`,
+              message: 'Please ensure you completed the action on Twitter and try again.',
+              beforeCounts,
+              afterCounts
+            }
+          }, { status: 400 });
+        }
+
+        console.log(`✅ Action verification successful:`, verificationResult.message);
+        console.log(`📈 Count increase detected:`, {
+          action: job.actionType,
+          difference: verificationResult.counts?.difference || 0,
+          confidence: verificationResult.confidence || 'unknown',
+          beforeCounts: verificationResult.counts?.before,
+          afterCounts: verificationResult.counts?.after
+        });
+
+        // Log the successful verification for audit purposes
+        console.log(`🎯 VERIFICATION SUMMARY:`, {
+          userId: user.id,
+          jobId: jobIdNumber,
+          tweetId: tweetId,
+          actionType: job.actionType,
+          verificationMethod: 'two_phase_before_after_comparison',
+          countIncrease: verificationResult.counts?.difference || 0,
+          confidence: verificationResult.confidence,
+          timestamp: new Date().toISOString()
+        });
+
+        // Clean up verification session
+        try {
+          await supabase
+            .from('verification_sessions')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('job_id', jobIdNumber);
+        } catch (cleanupError) {
+          console.warn('Could not clean up verification session:', cleanupError);
+        }
+
+        // Verification completed successfully - proceed with reward
+        console.log(`🎉 Proceeding with job completion and reward...`);
+
+      } else {
         return NextResponse.json({
-          error: `Could not verify your ${job.actionType} action. Please ensure you completed the action on Twitter and try again.`,
-          details: 'TwitterAPI.io verification failed for both count increase and direct interaction methods.'
+          error: 'Invalid phase. Use "start" to begin verification or "verify" to complete it.',
+          validPhases: ['start', 'verify']
         }, { status: 400 });
       }
-
-      console.log(`✅ Twitter action verification completed via ${verificationMethod}`);
 
     } catch (verificationError) {
       console.error('Twitter verification process failed:', verificationError);
@@ -242,6 +391,13 @@ export async function POST(request: NextRequest) {
         error: 'Verification service temporarily unavailable. Please try again later.',
         details: verificationError instanceof Error ? verificationError.message : 'Unknown error'
       }, { status: 500 });
+    }
+
+    // Only proceed with reward if we're in the verify phase and verification passed
+    if (phase !== 'verify') {
+      return NextResponse.json({
+        error: 'Reward processing only available in verify phase'
+      }, { status: 400 });
     }
 
     // Calculate reward amount
