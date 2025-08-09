@@ -74,11 +74,27 @@ export async function POST(request: NextRequest) {
     // Get job details from contract
     const jobIdNumber = parseInt(jobId);
     console.log(`🔍 Looking up job ${jobIdNumber} from contract...`);
+    console.log(`Original jobId: "${jobId}" (type: ${typeof jobId})`);
+    console.log(`Parsed jobIdNumber: ${jobIdNumber} (type: ${typeof jobIdNumber})`);
+    console.log(`Is valid number: ${!isNaN(jobIdNumber) && isFinite(jobIdNumber)}`);
+
+    if (isNaN(jobIdNumber) || !isFinite(jobIdNumber)) {
+      console.log(`❌ Invalid job ID format: "${jobId}"`);
+      return NextResponse.json({ error: 'Invalid job ID format' }, { status: 400 });
+    }
 
     const job = await jobValidator.getJobFromContract(jobIdNumber);
     if (!job) {
       console.log(`❌ Job ${jobIdNumber} not found in contract`);
-      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+      console.log(`This could mean:`);
+      console.log(`- Job was completed and is no longer active`);
+      console.log(`- Job was cancelled by creator`);
+      console.log(`- Job ID doesn't exist`);
+      console.log(`- Contract connection issue`);
+      return NextResponse.json({ 
+        error: 'Job not found. It may have been completed or is no longer available.',
+        jobId: jobIdNumber 
+      }, { status: 404 });
     }
 
     console.log(`✅ Job found:`, {

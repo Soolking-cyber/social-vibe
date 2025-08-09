@@ -35,7 +35,7 @@ export default function Marketplace() {
     const [verifyingJobs, setVerifyingJobs] = useState<Set<number>>(new Set());
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
     const [jobsInProgress, setJobsInProgress] = useState<Set<string>>(new Set());
-  const [jobBaselines, setJobBaselines] = useState<Map<string, any>>(new Map());
+    const [jobBaselines, setJobBaselines] = useState<Map<string, any>>(new Map());
 
 
     // Helper function to normalize action types
@@ -62,12 +62,19 @@ export default function Marketplace() {
     const handleCompleteJob = async (job: Job) => {
         try {
             setCompletingJobs(prev => new Set(prev).add(job.id));
-            
+
             // Phase 1: Start verification and get baseline counts
+            console.log('🚀 Starting job completion for:', {
+                jobId: job.id,
+                jobIdType: typeof job.id,
+                jobTitle: job.actionType,
+                jobUrl: job.tweetUrl
+            });
+
             const response = await fetch('/api/jobs/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     jobId: job.id,
                     phase: 'start'
                 })
@@ -86,13 +93,21 @@ export default function Marketplace() {
 
             // Mark job as in progress (ready for verification)
             setJobsInProgress(prev => new Set(prev).add(job.id.toString()));
-            
+
             // Redirect to Twitter
             window.open(job.tweetUrl, '_blank', 'noopener,noreferrer');
-            
+
         } catch (error) {
             console.error('Failed to start job completion:', error);
-            alert(error instanceof Error ? error.message : 'Failed to start verification');
+            
+            // If job not found, refresh the jobs list as it might have been completed
+            if (error instanceof Error && error.message.includes('Job not found')) {
+                console.log('🔄 Job not found - refreshing jobs list...');
+                fetchJobs();
+                alert('This job is no longer available. It may have been completed by someone else. The job list has been refreshed.');
+            } else {
+                alert(error instanceof Error ? error.message : 'Failed to start verification');
+            }
         } finally {
             setCompletingJobs(prev => {
                 const newSet = new Set(prev);
@@ -105,7 +120,7 @@ export default function Marketplace() {
     const handleVerifyJob = async (job: Job) => {
         try {
             setVerifyingJobs(prev => new Set(prev).add(job.id));
-            
+
             // Get stored baseline counts
             const beforeCounts = jobBaselines.get(job.id.toString());
             if (!beforeCounts) {
@@ -116,7 +131,7 @@ export default function Marketplace() {
             const response = await fetch('/api/jobs/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     jobId: job.id,
                     phase: 'verify',
                     beforeCounts: beforeCounts
@@ -157,11 +172,11 @@ export default function Marketplace() {
             await refreshBalances();
 
             alert(`Success! You earned $${result.rewardAmount} USDC!`);
-            
+
         } catch (error) {
             console.error('Failed to verify job completion:', error);
             alert(error instanceof Error ? error.message : 'Verification failed');
-            
+
             // If verification fails, remove from in-progress so user can try again
             setJobsInProgress(prev => {
                 const newSet = new Set(prev);
@@ -248,7 +263,7 @@ export default function Marketplace() {
 
     const getActionUrl = (job: Job) => {
         const tweetId = extractTweetId(job.tweetUrl);
-        
+
         switch (job.actionType) {
             case 'like':
                 return `https://twitter.com/intent/like?tweet_id=${tweetId}`;
