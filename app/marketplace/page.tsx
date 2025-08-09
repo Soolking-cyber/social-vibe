@@ -35,6 +35,7 @@ export default function Marketplace() {
     const [verifyingJobs, setVerifyingJobs] = useState<Set<number>>(new Set());
     const [sortBy, setSortBy] = useState<'status' | 'newest' | 'price'>('status');
     const [jobsInProgress, setJobsInProgress] = useState<Set<string>>(new Set());
+  const [jobBaselines, setJobBaselines] = useState<Map<string, any>>(new Map());
 
 
     // Helper function to normalize action types
@@ -80,6 +81,9 @@ export default function Marketplace() {
             const result = await response.json();
             console.log('✅ Baseline counts captured:', result);
 
+            // Store baseline counts for verification phase
+            setJobBaselines(prev => new Map(prev).set(job.id.toString(), result.beforeCounts));
+
             // Mark job as in progress (ready for verification)
             setJobsInProgress(prev => new Set(prev).add(job.id.toString()));
             
@@ -102,13 +106,20 @@ export default function Marketplace() {
         try {
             setVerifyingJobs(prev => new Set(prev).add(job.id));
             
+            // Get stored baseline counts
+            const beforeCounts = jobBaselines.get(job.id.toString());
+            if (!beforeCounts) {
+                throw new Error('Baseline counts not found. Please start the completion process again.');
+            }
+
             // Phase 2: Verify the action completion
             const response = await fetch('/api/jobs/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     jobId: job.id,
-                    phase: 'verify'
+                    phase: 'verify',
+                    beforeCounts: beforeCounts
                 })
             });
 
@@ -129,11 +140,17 @@ export default function Marketplace() {
                 )
             );
 
-            // Remove from in-progress
+            // Remove from in-progress and clean up baseline counts
             setJobsInProgress(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(job.id.toString());
                 return newSet;
+            });
+
+            setJobBaselines(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(job.id.toString());
+                return newMap;
             });
 
             // Refresh balances
@@ -144,6 +161,19 @@ export default function Marketplace() {
         } catch (error) {
             console.error('Failed to verify job completion:', error);
             alert(error instanceof Error ? error.message : 'Verification failed');
+            
+            // If verification fails, remove from in-progress so user can try again
+            setJobsInProgress(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(job.id.toString());
+                return newSet;
+            });
+
+            setJobBaselines(prev => {
+                const newMap = new Map(prev);
+                newMap.delete(job.id.toString());
+                return newMap;
+            });
         } finally {
             setVerifyingJobs(prev => {
                 const newSet = new Set(prev);

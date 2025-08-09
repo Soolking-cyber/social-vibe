@@ -162,11 +162,11 @@ export async function POST(request: NextRequest) {
       // Handle two-phase verification process
       if (phase === 'start') {
         console.log(`🚀 PHASE 1: Starting verification - capturing BEFORE counts`);
-        
+
         // Get BEFORE counts (baseline) - always fresh data
         console.log(`📊 Getting BEFORE counts for tweet ${tweetId}...`);
         console.log(`🔗 Tweet URL: ${job.tweetUrl}`);
-        
+
         const beforeResponse = await fetch(`${baseUrl}/api/twitterapi-io-proxy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
 
         const beforeData = await beforeResponse.json();
         console.log(`📋 Before response data:`, beforeData);
-        
+
         if (!beforeData.success) {
           console.error(`❌ Before counts not successful:`, beforeData);
           throw new Error(beforeData.error || 'Failed to get before counts');
@@ -195,17 +195,17 @@ export async function POST(request: NextRequest) {
 
         const beforeCounts = beforeData.counts;
         console.log(`✅ BEFORE counts captured:`, beforeCounts);
-        
+
         // Validate that we got actual count data
         if (!beforeCounts || typeof beforeCounts !== 'object') {
           console.error(`❌ Invalid before counts format:`, beforeCounts);
           throw new Error('Invalid tweet counts format received');
         }
-        
+
         // Check if all counts are 0 (might indicate an issue)
         const totalCounts = (beforeCounts.likes || 0) + (beforeCounts.retweets || 0) + (beforeCounts.replies || 0);
         console.log(`📊 Total engagement before: ${totalCounts} (likes: ${beforeCounts.likes}, retweets: ${beforeCounts.retweets}, replies: ${beforeCounts.replies})`);
-        
+
         if (totalCounts === 0) {
           console.warn(`⚠️ Tweet has zero engagement - this might be a new tweet or there could be an API issue`);
         }
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
 
         // Store verification session in memory/database for later verification
         const verificationKey = `verification_${user.id}_${jobIdNumber}`;
-        
+
         // Try to store in a simple table or use a cache mechanism
         // For now, we'll use a simple approach with user metadata or a separate table
         try {
@@ -272,7 +272,7 @@ export async function POST(request: NextRequest) {
 
         // Get before counts from the request or database
         let beforeCounts = body.beforeCounts;
-        
+
         if (!beforeCounts) {
           // Try to get from database
           try {
@@ -286,7 +286,7 @@ export async function POST(request: NextRequest) {
             if (session) {
               beforeCounts = session.before_counts;
               console.log(`📋 Retrieved before counts from database:`, beforeCounts);
-              
+
               // Check if session is expired (10 minutes)
               const sessionAge = Date.now() - new Date(session.created_at).getTime();
               if (sessionAge > 10 * 60 * 1000) {
@@ -330,7 +330,7 @@ export async function POST(request: NextRequest) {
 
         const afterData = await afterResponse.json();
         console.log(`📋 After response data:`, afterData);
-        
+
         if (!afterData.success) {
           console.error(`❌ After counts not successful:`, afterData);
           throw new Error(afterData.error || 'Failed to get after counts');
@@ -338,7 +338,7 @@ export async function POST(request: NextRequest) {
 
         const afterCounts = afterData.counts;
         console.log(`✅ AFTER counts captured:`, afterCounts);
-        
+
         // Compare before and after counts
         console.log(`📊 COUNT COMPARISON:`, {
           before: beforeCounts,
@@ -468,7 +468,7 @@ export async function POST(request: NextRequest) {
         phase: phase,
         userId: user?.id
       });
-      
+
       return NextResponse.json({
         error: 'Verification service temporarily unavailable. Please try again later.',
         details: verificationError instanceof Error ? verificationError.message : 'Unknown error',
