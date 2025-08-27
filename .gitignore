@@ -70,3 +70,6 @@ temp/
 *.key
 *.pem
 wallet-*.json
+
+# Deployment files with secrets
+VERCEL_DEPLOYMENT.md
