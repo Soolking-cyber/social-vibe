@@ -16,7 +16,7 @@ const nextConfig = {
     };
     return config;
   },
-  // Force new deployment
+  // Force clean deployment - fixed syntax errors
 }
 
 module.exports = nextConfig
