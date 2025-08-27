@@ -6,8 +6,8 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   providers: [
     TwitterProvider({
-      clientId: process.env.TWITTER_CLIENT_ID!,
-      clientSecret: process.env.TWITTER_CLIENT_SECRET!,
+      clientId: process.env.TWITTER_CLIENT_ID || '',
+      clientSecret: process.env.TWITTER_CLIENT_SECRET || '',
       version: "2.0",
     }),
   ],
@@ -65,30 +65,34 @@ export const authOptions: NextAuthOptions = {
           
           // Store Twitter handle securely in database immediately
           try {
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabase = createClient(
-              process.env.NEXT_PUBLIC_SUPABASE_URL!,
-              process.env.SUPABASE_SERVICE_ROLE_KEY!
-            );
-            
-            const userIdentifier = user?.email || user?.name;
-            console.log('💾 Storing Twitter handle for user:', userIdentifier);
-            
-            if (userIdentifier) {
-              const result = await supabase
-                .from('users')
-                .upsert({
-                  name: userIdentifier,
-                  email: user?.email || `${userIdentifier}@twitter.local`,
-                  twitter_handle: twitterHandle,
-                  image: user?.image
-                }, {
-                  onConflict: 'name',
-                  ignoreDuplicates: false
-                });
+            if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+              const { createClient } = await import('@supabase/supabase-js');
+              const supabase = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL,
+                process.env.SUPABASE_SERVICE_ROLE_KEY
+              );
               
-              console.log('💾 Database upsert result:', result);
-              console.log('✅ Twitter handle stored securely in database');
+              const userIdentifier = user?.email || user?.name;
+              console.log('💾 Storing Twitter handle for user:', userIdentifier);
+              
+              if (userIdentifier) {
+                const result = await supabase
+                  .from('users')
+                  .upsert({
+                    name: userIdentifier,
+                    email: user?.email || `${userIdentifier}@twitter.local`,
+                    twitter_handle: twitterHandle,
+                    image: user?.image
+                  }, {
+                    onConflict: 'name',
+                    ignoreDuplicates: false
+                  });
+                
+                console.log('💾 Database upsert result:', result);
+                console.log('✅ Twitter handle stored securely in database');
+              }
+            } else {
+              console.warn('⚠️ Supabase environment variables not configured');
             }
           } catch (error) {
             console.error('❌ Failed to store Twitter handle:', error);
