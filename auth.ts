@@ -2,7 +2,6 @@ import NextAuth, { NextAuthOptions } from "next-auth"
 import TwitterProvider from "next-auth/providers/twitter"
 
 export const authOptions: NextAuthOptions = {
-  debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET,
   providers: [
     TwitterProvider({
@@ -13,26 +12,9 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-  jwt: {
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-  cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production' 
-        ? '__Secure-next-auth.session-token' 
-        : 'next-auth.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production'
-      }
-    }
   },
   callbacks: {
-    async jwt({ token, account, user, profile }) {
+    async jwt({ token, account, user }) {
       if (account) {
         token.accessToken = account.access_token
       }
@@ -41,78 +23,13 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name
         token.image = user.image
       }
-      // Capture Twitter username from profile during login
-      if (profile && account?.provider === 'twitter') {
-        console.log('🔍 Twitter OAuth profile received:', {
-          profile: JSON.stringify(profile, null, 2),
-          profileData: (profile as any).data,
-          profileUsername: (profile as any).username,
-          accountProvider: account.provider,
-          user: JSON.stringify(user, null, 2),
-          account: JSON.stringify(account, null, 2)
-        });
-        
-        // Try multiple ways to extract Twitter handle
-        const twitterHandle = 
-          (profile as any).data?.username || 
-          (profile as any).username || 
-          (profile as any).screen_name ||
-          (user as any).username ||
-          (account as any).username;
-        if (twitterHandle) {
-          token.twitterHandle = twitterHandle;
-          console.log('🔐 Captured Twitter handle during auth:', twitterHandle);
-          
-          // Store Twitter handle securely in database immediately
-          try {
-            if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-              const { createClient } = await import('@supabase/supabase-js');
-              const supabase = createClient(
-                process.env.NEXT_PUBLIC_SUPABASE_URL,
-                process.env.SUPABASE_SERVICE_ROLE_KEY
-              );
-              
-              const userIdentifier = user?.email || user?.name;
-              console.log('💾 Storing Twitter handle for user:', userIdentifier);
-              
-              if (userIdentifier) {
-                const result = await supabase
-                  .from('users')
-                  .upsert({
-                    name: userIdentifier,
-                    email: user?.email || `${userIdentifier}@twitter.local`,
-                    twitter_handle: twitterHandle,
-                    image: user?.image
-                  }, {
-                    onConflict: 'name',
-                    ignoreDuplicates: false
-                  });
-                
-                console.log('💾 Database upsert result:', result);
-                console.log('✅ Twitter handle stored securely in database');
-              }
-            } else {
-              console.warn('⚠️ Supabase environment variables not configured');
-            }
-          } catch (error) {
-            console.error('❌ Failed to store Twitter handle:', error);
-          }
-        } else {
-          console.warn('⚠️ No Twitter handle found in profile');
-        }
-      }
       return token
     },
     async session({ session, token }) {
-      // Pass token data to session
       if (token) {
         session.user.email = token.email as string
         session.user.name = token.name as string
         session.user.image = token.image as string
-        // Add Twitter handle to session (but don't rely on it - fetch from DB instead)
-        if (token.twitterHandle) {
-          (session.user as any).twitterHandle = token.twitterHandle as string
-        }
       }
       return session
     },
@@ -124,6 +41,3 @@ export const authOptions: NextAuthOptions = {
 
 const handler = NextAuth(authOptions)
 export { handler as GET, handler as POST }
-
-// Export auth function for App Router
-export const { auth } = NextAuth(authOptions)
