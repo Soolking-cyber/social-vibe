@@ -16,6 +16,7 @@ const nextConfig = {
     };
     return config;
   },
+  // Force new deployment
 }
 
 module.exports = nextConfig
