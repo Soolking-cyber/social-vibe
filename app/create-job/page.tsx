@@ -36,7 +36,7 @@ export default function CreateJob() {
       const platformFee = totalBudget * 0.1;
       const totalCost = totalBudget + platformFee;
 
-      const response = await fetch('/api/contract/create-job', {
+      const response = await fetch('/api/jobs/create', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

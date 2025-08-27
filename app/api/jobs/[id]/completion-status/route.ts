@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { createClient } from '@supabase/supabase-js';
 import { authOptions } from '@/auth';
-import { jobValidator } from '@/lib/job-validation';
+import { createJobsFactoryService } from '@/lib/contract';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,8 +55,8 @@ export async function GET(
     // Also check contract-level completion status
     let contractCompleted = false;
     try {
-      const validation = await jobValidator.canUserCompleteJob(jobId, user.wallet_address);
-      contractCompleted = !validation.canComplete; // If can't complete, then already completed
+      const jobsFactoryService = createJobsFactoryService(process.env.JOBS_FACTORY_CONTRACT_ADDRESS!);
+      contractCompleted = await jobsFactoryService.hasUserCompletedJob(jobId, user.wallet_address);
     } catch (error) {
       console.error('Error checking contract completion:', error);
     }

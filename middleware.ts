@@ -21,17 +21,12 @@ export default withAuth(
           return true
         }
         
-        // Allow access to NextAuth API routes
+        // Allow access to NextAuth API routes (authentication endpoints)
         if (pathname.startsWith('/api/auth')) {
           return true
         }
         
-        // Allow access to TwitterAPI.io proxy (needed for verification)
-        if (pathname === '/api/twitterapi-io-proxy') {
-          return true
-        }
-        
-        // Public routes that don't require authentication
+        // Public static assets
         const publicRoutes = [
           '/favicon.ico',
         ]
@@ -40,7 +35,10 @@ export default withAuth(
           return true
         }
         
-        // For all other routes (pages and API), require authentication
+        // All other routes require authentication
+        // This includes:
+        // - Core pages: /, /marketplace, /create-job
+        // - API endpoints: /api/jobs, /api/user, /api/wallet, /api/verify-twitter-action
         return !!token
       },
     },

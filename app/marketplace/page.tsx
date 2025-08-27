@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import UserDashboard from '../../components/UserDashboard';
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -330,7 +329,7 @@ export default function Marketplace() {
                     <p className="text-slate-400 text-lg">Discover engagement opportunities and start earning</p>
                 </div>
 
-                {session && <UserDashboard onRefresh={refreshBalances} />}
+
 
                 {/* Sorting Controls */}
                 {jobs.length > 0 && (

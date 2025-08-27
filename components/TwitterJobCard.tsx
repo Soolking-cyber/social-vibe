@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Twitter, Heart, Repeat, MessageCircle, DollarSign } from 'lucide-react';
-import { SimpleTwitterVerification } from './SimpleTwitterVerification';
+
 
 interface TwitterJob {
   id: string;
@@ -114,14 +114,29 @@ export function TwitterJobCard({ job, onJobCompleted }: TwitterJobCardProps) {
               Complete {job.actionType.charAt(0).toUpperCase() + job.actionType.slice(1)} Job
             </Button>
           ) : (
-            <SimpleTwitterVerification
-              job={job}
-              onVerified={() => {
-                onJobCompleted(job.id);
-                setShowVerification(false);
-              }}
-              onCancel={() => setShowVerification(false)}
-            />
+            <div className="space-y-3 p-4 bg-slate-900/50 border border-slate-700 rounded-lg">
+              <p className="text-slate-300 text-sm">
+                Verification functionality has been simplified. Please complete the action manually.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    onJobCompleted(job.id);
+                    setShowVerification(false);
+                  }}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  Mark as Completed
+                </Button>
+                <Button
+                  onClick={() => setShowVerification(false)}
+                  variant="outline"
+                  className="border-slate-700 text-slate-300"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           )}
 
           {/* Additional Info */}

@@ -1,6 +1,5 @@
 import { Providers } from "@/components/providers"
 import AuthWrapper from "@/components/AuthWrapper"
-import { GlobalVerificationStatus } from "@/components/WidgetVerificationStatus"
 import "./globals.css"
 
 export const metadata = {
@@ -19,7 +18,6 @@ export default function RootLayout({
         <Providers>
           <AuthWrapper>
             {children}
-            <GlobalVerificationStatus />
           </AuthWrapper>
         </Providers>
       </body>

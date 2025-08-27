@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/auth';
-import { jobValidator } from '@/lib/job-validation';
+import { createJobsFactoryService } from '@/lib/contract';
 
 export async function GET() {
   try {
@@ -16,9 +16,42 @@ export async function GET() {
     console.log('=== FETCHING JOBS FROM CONTRACT ===');
     
     try {
-      const jobs = await jobValidator.getActiveJobs();
-      console.log(`Successfully fetched ${jobs.length} jobs from contract`);
+      const jobsFactoryService = createJobsFactoryService(process.env.JOBS_FACTORY_CONTRACT_ADDRESS!);
+      const activeJobIds = await jobsFactoryService.getActiveJobs();
+      const jobs = [];
       
+      for (const jobId of activeJobIds) {
+        try {
+          const jobDetails = await jobsFactoryService.getJob(Number(jobId));
+          
+          // Check if job exists (creator address is not zero)
+          if (jobDetails.creator === '0x0000000000000000000000000000000000000000') {
+            continue;
+          }
+          
+          jobs.push({
+            id: Number(jobId),
+            creator: jobDetails.creator,
+            tweetUrl: jobDetails.tweetUrl,
+            actionType: jobDetails.actionType,
+            pricePerAction: jobsFactoryService.formatUSDC(jobDetails.pricePerAction),
+            maxActions: Number(jobDetails.maxActions),
+            completedActions: Number(jobDetails.completedActions),
+            totalBudget: jobsFactoryService.formatUSDC(jobDetails.totalBudget),
+            commentText: jobDetails.commentText,
+            isActive: jobDetails.isActive,
+            createdAt: new Date(Number(jobDetails.createdAt) * 1000).toISOString(),
+            remainingActions: Number(jobDetails.maxActions) - Number(jobDetails.completedActions)
+          });
+        } catch (jobError) {
+          console.error(`Error fetching job ${jobId}:`, jobError);
+        }
+      }
+      
+      // Sort by creation date (newest first)
+      jobs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      console.log(`Successfully fetched ${jobs.length} jobs from contract`);
       return NextResponse.json(jobs);
       
     } catch (contractError) {
